@@ -13,10 +13,11 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.testd.R
+import com.example.testd.AppConfig
+import com.example.testd.UserSession
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
@@ -31,8 +32,7 @@ class MainActivity : AppCompatActivity() {
 
     private val loginUrl = "http://ids.xidian.edu.cn/authserver/login"
     private val targetUrlKeyword = "personalInfo"
-    private val backendBaseUrl = "http://192.168.110.58:5000"
-    private val httpClient = OkHttpClient()
+    private var hasSubmitted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,6 +122,10 @@ class MainActivity : AppCompatActivity() {
         fun onDataReceived(id: String, name: String) {
             val studentId = id.trim()
             val studentName = name.trim()
+            if (hasSubmitted) {
+                return
+            }
+            hasSubmitted = true
             runOnUiThread {
                 tvStatus.text = "登录认证成功！"
                 tvResult.text = "学号：$studentId\n姓名：$studentName"
@@ -143,13 +147,14 @@ class MainActivity : AppCompatActivity() {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = payload.toString().toRequestBody(mediaType)
         val request = Request.Builder()
-            .url("$backendBaseUrl/users")
+            .url("${AppConfig.BASE_URL}/users")
             .post(requestBody)
             .build()
 
-        httpClient.newCall(request).enqueue(object : Callback {
+        AppConfig.httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("UserUpload", "提交失败", e)
+                hasSubmitted = false
                 runOnUiThread {
                     Toast.makeText(
                         this@MainActivity,
@@ -163,10 +168,9 @@ class MainActivity : AppCompatActivity() {
                 val code = response.code
                 response.close()
                 if (code == 201 || code == 409) {
-                    runOnUiThread {
-                        navigateToBlank()
-                    }
+                    fetchUsernameAndProceed(studentId, name)
                 } else {
+                    hasSubmitted = false
                     runOnUiThread {
                         Toast.makeText(
                             this@MainActivity,
@@ -179,8 +183,44 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun navigateToBlank() {
-        val intent = Intent(this, BlankActivity::class.java)
+    private fun fetchUsernameAndProceed(studentId: String, name: String) {
+        val request = Request.Builder()
+            .url("${AppConfig.BASE_URL}/users/$studentId")
+            .get()
+            .build()
+
+        AppConfig.httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e("UserFetch", "获取用户名失败", e)
+                UserSession.save(this@MainActivity, studentId, name, studentId)
+                runOnUiThread {
+                    navigateToHome()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string().orEmpty()
+                val code = response.code
+                response.close()
+                if (code == 200) {
+                    val json = JSONObject(body)
+                    val username = json.optString("username", studentId).ifBlank { studentId }
+                    val updatedName = json.optString("name", name).ifBlank { name }
+                    UserSession.save(this@MainActivity, studentId, updatedName, username)
+                } else if (code == 404) {
+                    UserSession.save(this@MainActivity, studentId, name, studentId)
+                } else {
+                    UserSession.save(this@MainActivity, studentId, name, studentId)
+                }
+                runOnUiThread {
+                    navigateToHome()
+                }
+            }
+        })
+    }
+
+    private fun navigateToHome() {
+        val intent = Intent(this, HomeActivity::class.java)
         startActivity(intent)
         finish()
     }

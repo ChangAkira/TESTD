@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">TESTD</string>
+    <string name="column1">栏目1</string>
+    <string name="column2">栏目2</string>
+    <string name="profile">个人</string>
+    <string name="student_id_label">学号</string>
+    <string name="name_label">姓名</string>
+    <string name="username_label">用户名</string>
+    <string name="update_username">修改用户名</string>
+    <string name="logout">退出登录</string>
+    <string name="username_hint">请输入新的用户名</string>
 </resources>

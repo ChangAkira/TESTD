@@ -69,5 +69,66 @@ def create_user():
             conn.close()
 
 
+@app.route("/users/<student_id>", methods=["GET"])
+def get_user(student_id):
+    student_id = (student_id or "").strip()
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_table_exists(conn)
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT student_id, name, username FROM USERINFOS WHERE student_id = %s",
+                (student_id,),
+            )
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(row), 200
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/users/<student_id>", methods=["PUT"])
+def update_username(student_id):
+    student_id = (student_id or "").strip()
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+
+    if not student_id or not username:
+        return jsonify({"error": "student_id and username are required"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_table_exists(conn)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE USERINFOS SET username = %s WHERE student_id = %s",
+                (username, student_id),
+            )
+            if cursor.rowcount == 0:
+                return jsonify({"error": "not found"}), 404
+        conn.commit()
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT student_id, name, username FROM USERINFOS WHERE student_id = %s",
+                (student_id,),
+            )
+            row = cursor.fetchone()
+        return jsonify(row), 200
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
