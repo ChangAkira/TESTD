@@ -1,6 +1,7 @@
 package com.example.testd // 保持你自己的包名
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -12,6 +13,15 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.testd.R
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import org.json.JSONObject
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,6 +31,8 @@ class MainActivity : AppCompatActivity() {
 
     private val loginUrl = "http://ids.xidian.edu.cn/authserver/login"
     private val targetUrlKeyword = "personalInfo"
+    private val backendBaseUrl = "http://192.168.110.58:5000"
+    private val httpClient = OkHttpClient()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,14 +120,68 @@ class MainActivity : AppCompatActivity() {
     inner class WebAppInterface {
         @JavascriptInterface
         fun onDataReceived(id: String, name: String) {
+            val studentId = id.trim()
+            val studentName = name.trim()
             runOnUiThread {
                 tvStatus.text = "登录认证成功！"
-                tvResult.text = "学号：${id.trim()}\n姓名：${name.trim()}"
+                tvResult.text = "学号：$studentId\n姓名：$studentName"
                 //Toast.makeText(this@MainActivity, "抓取成功", Toast.LENGTH_SHORT).show()
 
                 // 打印日志，确认收到
-                Log.d("GrabData", "收到数据: $id, $name")
+                Log.d("GrabData", "收到数据: $studentId, $studentName")
             }
+            postUserInfo(studentId, studentName)
         }
+    }
+
+    private fun postUserInfo(studentId: String, name: String) {
+        val payload = JSONObject()
+        payload.put("student_id", studentId)
+        payload.put("name", name)
+        payload.put("username", studentId)
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = payload.toString().toRequestBody(mediaType)
+        val request = Request.Builder()
+            .url("$backendBaseUrl/users")
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e("UserUpload", "提交失败", e)
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "提交失败，请检查网络或后端服务",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val code = response.code
+                response.close()
+                if (code == 201 || code == 409) {
+                    runOnUiThread {
+                        navigateToBlank()
+                    }
+                } else {
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "提交失败，状态码: $code",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        })
+    }
+
+    private fun navigateToBlank() {
+        val intent = Intent(this, BlankActivity::class.java)
+        startActivity(intent)
+        finish()
     }
 }
