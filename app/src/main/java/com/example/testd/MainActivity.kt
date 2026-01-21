@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
         AppConfig.httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("UserFetch", "获取用户名失败", e)
-                UserSession.save(this@MainActivity, studentId, name, studentId)
+                UserSession.save(this@MainActivity, studentId, name, studentId, "", "")
                 runOnUiThread {
                     navigateToHome()
                 }
@@ -221,11 +221,25 @@ class MainActivity : AppCompatActivity() {
                     val json = JSONObject(body)
                     val username = json.optString("username", studentId).ifBlank { studentId }
                     val updatedName = json.optString("name", name).ifBlank { name }
-                    UserSession.save(this@MainActivity, studentId, updatedName, username)
+                    val avatarFilename = json.optString("avatar_filename", "")
+                    val avatarPath = json.optString("avatar_url", "")
+                    val avatarUrl = if (avatarPath.isNotBlank()) {
+                        "${AppConfig.BASE_URL}$avatarPath"
+                    } else {
+                        ""
+                    }
+                    UserSession.save(
+                        this@MainActivity,
+                        studentId,
+                        updatedName,
+                        username,
+                        avatarFilename,
+                        avatarUrl
+                    )
                 } else if (code == 404) {
-                    UserSession.save(this@MainActivity, studentId, name, studentId)
+                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "")
                 } else {
-                    UserSession.save(this@MainActivity, studentId, name, studentId)
+                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "")
                 }
                 runOnUiThread {
                     navigateToHome()

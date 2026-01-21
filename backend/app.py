@@ -1,4 +1,7 @@
 import os
+import random
+from pathlib import Path
+from urllib.parse import quote
 
 from flask import Flask, jsonify, request
 import mysql.connector
@@ -6,6 +9,9 @@ from mysql.connector import errorcode
 
 
 app = Flask(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
+AVATAR_DIR = BASE_DIR / "static" / "avatars"
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -20,16 +26,57 @@ def get_connection():
     return mysql.connector.connect(**DB_CONFIG)
 
 
+def list_default_avatars():
+    if not AVATAR_DIR.exists():
+        return []
+    return sorted(
+        [p.name for p in AVATAR_DIR.iterdir() if p.is_file() and p.name.startswith("default")]
+    )
+
+
+def pick_default_avatar():
+    candidates = list_default_avatars()
+    if not candidates:
+        return None
+    return random.choice(candidates)
+
+
+def build_avatar_url(filename):
+    if not filename:
+        return None
+    return f"/static/avatars/{quote(filename)}"
+
+
+def is_jpg_file(filename, content_type):
+    if not filename:
+        return False
+    lower = filename.lower()
+    if not (lower.endswith(".jpg") or lower.endswith(".jpeg")):
+        return False
+    if content_type and content_type not in ("image/jpeg", "image/jpg"):
+        return False
+    return True
+
+
 def ensure_table_exists(conn):
     create_sql = """
     CREATE TABLE IF NOT EXISTS USERINFOS (
         student_id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(128),
-        username VARCHAR(128)
+        username VARCHAR(128),
+        avatar_filename VARCHAR(255)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """
     with conn.cursor() as cursor:
         cursor.execute(create_sql)
+    conn.commit()
+
+
+def ensure_avatar_column(conn):
+    with conn.cursor() as cursor:
+        cursor.execute("SHOW COLUMNS FROM USERINFOS LIKE 'avatar_filename'")
+        if cursor.fetchone() is None:
+            cursor.execute("ALTER TABLE USERINFOS ADD COLUMN avatar_filename VARCHAR(255)")
     conn.commit()
 
 
@@ -52,12 +99,14 @@ def create_user():
     try:
         conn = get_connection()
         ensure_table_exists(conn)
+        ensure_avatar_column(conn)
+        avatar_filename = pick_default_avatar()
         with conn.cursor() as cursor:
             insert_sql = """
-            INSERT INTO USERINFOS (student_id, name, username)
-            VALUES (%s, %s, %s)
+            INSERT INTO USERINFOS (student_id, name, username, avatar_filename)
+            VALUES (%s, %s, %s, %s)
             """
-            cursor.execute(insert_sql, (student_id, name, username))
+            cursor.execute(insert_sql, (student_id, name, username, avatar_filename))
         conn.commit()
         return jsonify({"status": "created"}), 201
     except mysql.connector.Error as exc:
@@ -79,14 +128,26 @@ def get_user(student_id):
     try:
         conn = get_connection()
         ensure_table_exists(conn)
+        ensure_avatar_column(conn)
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
-                "SELECT student_id, name, username FROM USERINFOS WHERE student_id = %s",
+                "SELECT student_id, name, username, avatar_filename FROM USERINFOS WHERE student_id = %s",
                 (student_id,),
             )
             row = cursor.fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
+        if not row.get("avatar_filename"):
+            avatar_filename = pick_default_avatar()
+            if avatar_filename:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE USERINFOS SET avatar_filename = %s WHERE student_id = %s",
+                        (avatar_filename, student_id),
+                    )
+                conn.commit()
+                row["avatar_filename"] = avatar_filename
+        row["avatar_url"] = build_avatar_url(row.get("avatar_filename"))
         return jsonify(row), 200
     except mysql.connector.Error as exc:
         return jsonify({"error": str(exc)}), 500
@@ -108,6 +169,7 @@ def update_username(student_id):
     try:
         conn = get_connection()
         ensure_table_exists(conn)
+        ensure_avatar_column(conn)
         with conn.cursor() as cursor:
             cursor.execute(
                 "UPDATE USERINFOS SET username = %s WHERE student_id = %s",
@@ -118,11 +180,144 @@ def update_username(student_id):
         conn.commit()
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
-                "SELECT student_id, name, username FROM USERINFOS WHERE student_id = %s",
+                "SELECT student_id, name, username, avatar_filename FROM USERINFOS WHERE student_id = %s",
                 (student_id,),
             )
             row = cursor.fetchone()
+        if row:
+            row["avatar_url"] = build_avatar_url(row.get("avatar_filename"))
         return jsonify(row), 200
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/users/<student_id>/avatar", methods=["GET"])
+def get_avatar(student_id):
+    student_id = (student_id or "").strip()
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_table_exists(conn)
+        ensure_avatar_column(conn)
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT avatar_filename FROM USERINFOS WHERE student_id = %s",
+                (student_id,),
+            )
+            row = cursor.fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        avatar_filename = row.get("avatar_filename") or pick_default_avatar()
+        if avatar_filename and avatar_filename != row.get("avatar_filename"):
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE USERINFOS SET avatar_filename = %s WHERE student_id = %s",
+                    (avatar_filename, student_id),
+                )
+            conn.commit()
+        return (
+            jsonify(
+                {
+                    "avatar_filename": avatar_filename,
+                    "avatar_url": build_avatar_url(avatar_filename),
+                }
+            ),
+            200,
+        )
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/users/<student_id>/avatar/default", methods=["PUT"])
+def set_default_avatar(student_id):
+    student_id = (student_id or "").strip()
+    data = request.get_json(silent=True) or {}
+    avatar_filename = (data.get("avatar_filename") or "").strip()
+
+    if not student_id or not avatar_filename:
+        return jsonify({"error": "student_id and avatar_filename are required"}), 400
+
+    if avatar_filename not in list_default_avatars():
+        return jsonify({"error": "invalid default avatar"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_table_exists(conn)
+        ensure_avatar_column(conn)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE USERINFOS SET avatar_filename = %s WHERE student_id = %s",
+                (avatar_filename, student_id),
+            )
+            if cursor.rowcount == 0:
+                return jsonify({"error": "not found"}), 404
+        conn.commit()
+        return (
+            jsonify(
+                {
+                    "avatar_filename": avatar_filename,
+                    "avatar_url": build_avatar_url(avatar_filename),
+                }
+            ),
+            200,
+        )
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/users/<student_id>/avatar", methods=["POST"])
+def upload_avatar(student_id):
+    student_id = (student_id or "").strip()
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+
+    if "avatar" not in request.files:
+        return jsonify({"error": "avatar file is required"}), 400
+
+    avatar_file = request.files["avatar"]
+    if not is_jpg_file(avatar_file.filename, avatar_file.content_type):
+        return jsonify({"error": "only jpg is allowed"}), 400
+
+    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{student_id}.jpg"
+    save_path = AVATAR_DIR / filename
+    avatar_file.save(save_path)
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_table_exists(conn)
+        ensure_avatar_column(conn)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE USERINFOS SET avatar_filename = %s WHERE student_id = %s",
+                (filename, student_id),
+            )
+            if cursor.rowcount == 0:
+                return jsonify({"error": "not found"}), 404
+        conn.commit()
+        return (
+            jsonify(
+                {
+                    "avatar_filename": filename,
+                    "avatar_url": build_avatar_url(filename),
+                }
+            ),
+            200,
+        )
     except mysql.connector.Error as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

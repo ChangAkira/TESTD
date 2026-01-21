@@ -9,4 +9,9 @@
     <string name="update_username">修改用户名</string>
     <string name="logout">退出登录</string>
     <string name="username_hint">请输入新的用户名</string>
+    <string name="avatar">头像</string>
+    <string name="change_avatar">更换头像</string>
+    <string name="choose_default_avatar">从默认头像中选择</string>
+    <string name="choose_from_gallery">从相册上传</string>
+    <string name="only_jpg_allowed">只允许选择JPG图片</string>
 </resources>
