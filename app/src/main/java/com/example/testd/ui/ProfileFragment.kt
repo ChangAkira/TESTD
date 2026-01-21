@@ -44,15 +44,15 @@ class ProfileFragment : Fragment() {
     ) { uri ->
         if (uri == null) return@registerForActivityResult
         val mimeType = requireContext().contentResolver.getType(uri)
-        if (mimeType != "image/jpeg" && mimeType != "image/jpg") {
-            Toast.makeText(requireContext(), getString(R.string.only_jpg_allowed), Toast.LENGTH_SHORT).show()
+        if (mimeType != "image/jpeg" && mimeType != "image/jpg" && mimeType != "image/png" && mimeType != "image/gif") {
+            Toast.makeText(requireContext(), getString(R.string.only_image_allowed), Toast.LENGTH_SHORT).show()
             return@registerForActivityResult
         }
         val userInfo = UserSession.get(requireContext()) ?: return@registerForActivityResult
         val inputStream = requireContext().contentResolver.openInputStream(uri) ?: return@registerForActivityResult
         val bytes = inputStream.readBytes()
         inputStream.close()
-        uploadAvatar(userInfo.studentId, bytes)
+        uploadAvatar(userInfo.studentId, bytes, mimeType)
     }
 
     private lateinit var ivAvatar: ImageView
@@ -122,7 +122,7 @@ class ProfileFragment : Fragment() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showDefaultAvatarPicker()
-                    1 -> pickImageLauncher.launch("image/jpeg")
+                    1 -> pickImageLauncher.launch("image/*")
                 }
             }
             .show()
@@ -250,7 +250,7 @@ class ProfileFragment : Fragment() {
                         )
                     }
                     requireActivity().runOnUiThread {
-                        refreshUserInfo()
+                        fetchLatestAvatar()
                     }
                 } else {
                     requireActivity().runOnUiThread {
@@ -261,12 +261,17 @@ class ProfileFragment : Fragment() {
         })
     }
 
-    private fun uploadAvatar(studentId: String, data: ByteArray) {
-        val mediaType = "image/jpeg".toMediaType()
+    private fun uploadAvatar(studentId: String, data: ByteArray, mimeType: String) {
+        val mediaType = mimeType.toMediaType()
         val fileBody = data.toRequestBody(mediaType)
+        val extension = when (mimeType) {
+            "image/png" -> "png"
+            "image/gif" -> "gif"
+            else -> "jpg"
+        }
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataPart("avatar", "$studentId.jpg", fileBody)
+            .addFormDataPart("avatar", "$studentId.$extension", fileBody)
             .build()
 
         val request = Request.Builder()
@@ -287,7 +292,7 @@ class ProfileFragment : Fragment() {
                 response.close()
                 if (code == 200) {
                     val json = JSONObject(body)
-                    val avatarFilename = json.optString("avatar_filename", "$studentId.jpg")
+                    val avatarFilename = json.optString("avatar_filename", "")
                     val avatarPath = json.optString("avatar_url", "")
                     val avatarUrl = if (avatarPath.isNotBlank()) {
                         "${AppConfig.BASE_URL}$avatarPath"
@@ -306,13 +311,56 @@ class ProfileFragment : Fragment() {
                         )
                     }
                     requireActivity().runOnUiThread {
-                        refreshUserInfo()
+                        fetchLatestAvatar()
                         Toast.makeText(requireContext(), "上传成功", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     requireActivity().runOnUiThread {
                         Toast.makeText(requireContext(), "上传失败", Toast.LENGTH_SHORT).show()
                     }
+                }
+            }
+        })
+    }
+
+    private fun fetchLatestAvatar() {
+        val userInfo = UserSession.get(requireContext()) ?: return
+        val request = Request.Builder()
+            .url("${AppConfig.BASE_URL}/users/${userInfo.studentId}/avatar")
+            .get()
+            .build()
+
+        AppConfig.httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                requireActivity().runOnUiThread {
+                    refreshUserInfo()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string().orEmpty()
+                val code = response.code
+                response.close()
+                if (code == 200) {
+                    val json = JSONObject(body)
+                    val avatarFilename = json.optString("avatar_filename", userInfo.avatarFilename)
+                    val avatarPath = json.optString("avatar_url", "")
+                    val avatarUrl = if (avatarPath.isNotBlank()) {
+                        "${AppConfig.BASE_URL}$avatarPath"
+                    } else {
+                        userInfo.avatarUrl
+                    }
+                    UserSession.save(
+                        requireContext(),
+                        userInfo.studentId,
+                        userInfo.name,
+                        userInfo.username,
+                        avatarFilename,
+                        avatarUrl
+                    )
+                }
+                requireActivity().runOnUiThread {
+                    refreshUserInfo()
                 }
             }
         })

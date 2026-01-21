@@ -47,15 +47,37 @@ def build_avatar_url(filename):
     return f"/static/avatars/{quote(filename)}"
 
 
-def is_jpg_file(filename, content_type):
+def is_allowed_image(filename, content_type):
     if not filename:
         return False
     lower = filename.lower()
-    if not (lower.endswith(".jpg") or lower.endswith(".jpeg")):
+    if not (lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".png") or lower.endswith(".gif")):
         return False
-    if content_type and content_type not in ("image/jpeg", "image/jpg"):
+    if content_type and content_type not in ("image/jpeg", "image/jpg", "image/png", "image/gif"):
         return False
     return True
+
+
+def is_user_avatar(filename, student_id):
+    if not filename:
+        return False
+    lower = filename.lower()
+    return lower in (
+        f"{student_id.lower()}.jpg",
+        f"{student_id.lower()}.jpeg",
+        f"{student_id.lower()}.png",
+        f"{student_id.lower()}.gif",
+    )
+
+
+def delete_user_avatar_if_needed(student_id, current_filename, new_filename=None):
+    if not is_user_avatar(current_filename, student_id):
+        return
+    if new_filename and current_filename == new_filename:
+        return
+    path = AVATAR_DIR / current_filename
+    if path.exists():
+        path.unlink()
 
 
 def ensure_table_exists(conn):
@@ -256,12 +278,19 @@ def set_default_avatar(student_id):
         ensure_avatar_column(conn)
         with conn.cursor() as cursor:
             cursor.execute(
+                "SELECT avatar_filename FROM USERINFOS WHERE student_id = %s",
+                (student_id,),
+            )
+            row = cursor.fetchone()
+            current_filename = row[0] if row else None
+            cursor.execute(
                 "UPDATE USERINFOS SET avatar_filename = %s WHERE student_id = %s",
                 (avatar_filename, student_id),
             )
             if cursor.rowcount == 0:
                 return jsonify({"error": "not found"}), 404
         conn.commit()
+        delete_user_avatar_if_needed(student_id, current_filename)
         return (
             jsonify(
                 {
@@ -288,11 +317,14 @@ def upload_avatar(student_id):
         return jsonify({"error": "avatar file is required"}), 400
 
     avatar_file = request.files["avatar"]
-    if not is_jpg_file(avatar_file.filename, avatar_file.content_type):
-        return jsonify({"error": "only jpg is allowed"}), 400
+    if not is_allowed_image(avatar_file.filename, avatar_file.content_type):
+        return jsonify({"error": "only png/jpg/gif are allowed"}), 400
 
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"{student_id}.jpg"
+    ext = os.path.splitext(avatar_file.filename)[1].lower()
+    if ext == ".jpeg":
+        ext = ".jpg"
+    filename = f"{student_id}{ext}"
     save_path = AVATAR_DIR / filename
     avatar_file.save(save_path)
 
@@ -303,12 +335,21 @@ def upload_avatar(student_id):
         ensure_avatar_column(conn)
         with conn.cursor() as cursor:
             cursor.execute(
+                "SELECT avatar_filename FROM USERINFOS WHERE student_id = %s",
+                (student_id,),
+            )
+            row = cursor.fetchone()
+            current_filename = row[0] if row else None
+            cursor.execute(
                 "UPDATE USERINFOS SET avatar_filename = %s WHERE student_id = %s",
                 (filename, student_id),
             )
-            if cursor.rowcount == 0:
+            if row is None:
                 return jsonify({"error": "not found"}), 404
+            if cursor.rowcount == 0:
+                pass
         conn.commit()
+        delete_user_avatar_if_needed(student_id, current_filename, filename)
         return (
             jsonify(
                 {
