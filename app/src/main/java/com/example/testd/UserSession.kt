@@ -13,6 +13,7 @@ object UserSession {
     private const val KEY_STUDENT_ID = "student_id"
     private const val KEY_NAME = "name"
     private const val KEY_USERNAME = "username"
+    private const val KEY_LOGGED_OUT = "logged_out"
 
     fun save(context: Context, studentId: String, name: String, username: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -20,6 +21,7 @@ object UserSession {
             .putString(KEY_STUDENT_ID, studentId)
             .putString(KEY_NAME, name)
             .putString(KEY_USERNAME, username)
+            .putBoolean(KEY_LOGGED_OUT, false)
             .apply()
     }
 
@@ -29,6 +31,16 @@ object UserSession {
         val name = prefs.getString(KEY_NAME, "") ?: ""
         val username = prefs.getString(KEY_USERNAME, "") ?: ""
         return UserInfo(studentId, name, username)
+    }
+
+    fun isLoggedOut(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_LOGGED_OUT, false)
+    }
+
+    fun markLoggedOut(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_LOGGED_OUT, true).apply()
     }
 
     fun clear(context: Context) {

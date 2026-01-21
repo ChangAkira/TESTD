@@ -129,6 +129,7 @@ class ProfileFragment : Fragment() {
         CookieManager.getInstance().removeAllCookies(null)
         CookieManager.getInstance().flush()
         WebStorage.getInstance().deleteAllData()
+        UserSession.markLoggedOut(requireContext())
         UserSession.clear(requireContext())
 
         val intent = Intent(requireContext(), MainActivity::class.java)

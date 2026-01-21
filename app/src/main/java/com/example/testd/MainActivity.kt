@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.webkit.CookieManager
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -38,6 +39,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        if (!UserSession.isLoggedOut(this)) {
+            val cachedUser = UserSession.get(this)
+            if (cachedUser != null) {
+                navigateToHome()
+                return
+            }
+        }
+
         webView = findViewById(R.id.webView)
         tvStatus = findViewById(R.id.tvStatus)
         tvResult = findViewById(R.id.tvResult)
@@ -50,6 +59,10 @@ class MainActivity : AppCompatActivity() {
         val settings = webView.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
+
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
 
         webView.addJavascriptInterface(WebAppInterface(), "Android")
 
@@ -70,6 +83,7 @@ class MainActivity : AppCompatActivity() {
                 if (url != null && url.contains(targetUrlKeyword) && !url.contains("login")) {
                     //tvStatus.text = "检测到登录成功，正在尝试抓取..."
                     startGrabData()
+                    CookieManager.getInstance().flush()
                 }
             }
         }
@@ -115,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         """.trimIndent()
 
         webView.loadUrl("javascript:$jsCode")
+        CookieManager.getInstance().flush()
     }
 
     inner class WebAppInterface {
