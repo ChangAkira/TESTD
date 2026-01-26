@@ -80,13 +80,42 @@ def delete_user_avatar_if_needed(student_id, current_filename, new_filename=None
         path.unlink()
 
 
+def ensure_tasks_table(conn):
+    create_sql = """
+    CREATE TABLE IF NOT EXISTS TASKS (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        publisher_id VARCHAR(64),
+        acceptor_id VARCHAR(64),
+        title VARCHAR(128),
+        description TEXT,
+        start_location VARCHAR(128),
+        target_location VARCHAR(128),
+        reward DECIMAL(10,2),
+        status VARCHAR(32),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(create_sql)
+    conn.commit()
+
+
+def ensure_acceptor_column(conn):
+    with conn.cursor() as cursor:
+        cursor.execute("SHOW COLUMNS FROM TASKS LIKE 'acceptor_id'")
+        if cursor.fetchone() is None:
+            cursor.execute("ALTER TABLE TASKS ADD COLUMN acceptor_id VARCHAR(64)")
+    conn.commit()
+
+
 def ensure_table_exists(conn):
     create_sql = """
     CREATE TABLE IF NOT EXISTS USERINFOS (
         student_id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(128),
         username VARCHAR(128),
-        avatar_filename VARCHAR(255)
+        avatar_filename VARCHAR(255),
+        balance DECIMAL(10,2) DEFAULT 0
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """
     with conn.cursor() as cursor:
@@ -99,6 +128,14 @@ def ensure_avatar_column(conn):
         cursor.execute("SHOW COLUMNS FROM USERINFOS LIKE 'avatar_filename'")
         if cursor.fetchone() is None:
             cursor.execute("ALTER TABLE USERINFOS ADD COLUMN avatar_filename VARCHAR(255)")
+    conn.commit()
+
+
+def ensure_balance_column(conn):
+    with conn.cursor() as cursor:
+        cursor.execute("SHOW COLUMNS FROM USERINFOS LIKE 'balance'")
+        if cursor.fetchone() is None:
+            cursor.execute("ALTER TABLE USERINFOS ADD COLUMN balance DECIMAL(10,2) DEFAULT 0")
     conn.commit()
 
 
@@ -122,13 +159,14 @@ def create_user():
         conn = get_connection()
         ensure_table_exists(conn)
         ensure_avatar_column(conn)
+        ensure_balance_column(conn)
         avatar_filename = pick_default_avatar()
         with conn.cursor() as cursor:
             insert_sql = """
-            INSERT INTO USERINFOS (student_id, name, username, avatar_filename)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO USERINFOS (student_id, name, username, avatar_filename, balance)
+            VALUES (%s, %s, %s, %s, %s)
             """
-            cursor.execute(insert_sql, (student_id, name, username, avatar_filename))
+            cursor.execute(insert_sql, (student_id, name, username, avatar_filename, 0))
         conn.commit()
         return jsonify({"status": "created"}), 201
     except mysql.connector.Error as exc:
@@ -151,9 +189,10 @@ def get_user(student_id):
         conn = get_connection()
         ensure_table_exists(conn)
         ensure_avatar_column(conn)
+        ensure_balance_column(conn)
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
-                "SELECT student_id, name, username, avatar_filename FROM USERINFOS WHERE student_id = %s",
+                "SELECT student_id, name, username, avatar_filename, balance FROM USERINFOS WHERE student_id = %s",
                 (student_id,),
             )
             row = cursor.fetchone()
@@ -192,6 +231,7 @@ def update_username(student_id):
         conn = get_connection()
         ensure_table_exists(conn)
         ensure_avatar_column(conn)
+        ensure_balance_column(conn)
         with conn.cursor() as cursor:
             cursor.execute(
                 "UPDATE USERINFOS SET username = %s WHERE student_id = %s",
@@ -202,7 +242,7 @@ def update_username(student_id):
         conn.commit()
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
-                "SELECT student_id, name, username, avatar_filename FROM USERINFOS WHERE student_id = %s",
+                "SELECT student_id, name, username, avatar_filename, balance FROM USERINFOS WHERE student_id = %s",
                 (student_id,),
             )
             row = cursor.fetchone()
@@ -359,6 +399,160 @@ def upload_avatar(student_id):
             ),
             200,
         )
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/tasks", methods=["POST"])
+def create_task():
+    data = request.get_json(silent=True) or {}
+    publisher_id = (data.get("publisher_id") or "").strip()
+    title = (data.get("title") or "").strip()
+    description = (data.get("description") or "").strip()
+    start_location = (data.get("start_location") or "").strip()
+    target_location = (data.get("target_location") or "").strip()
+    reward = data.get("reward")
+
+    if not publisher_id or not title or reward is None:
+        return jsonify({"error": "publisher_id, title and reward are required"}), 400
+
+    try:
+        reward_value = float(reward)
+    except (TypeError, ValueError):
+        return jsonify({"error": "reward must be a number"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_tasks_table(conn)
+        ensure_acceptor_column(conn)
+        with conn.cursor() as cursor:
+            insert_sql = """
+            INSERT INTO TASKS (publisher_id, acceptor_id, title, description, start_location, target_location, reward, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(
+                insert_sql,
+                (
+                    publisher_id,
+                    None,
+                    title,
+                    description,
+                    start_location,
+                    target_location,
+                    reward_value,
+                    "等待接单",
+                ),
+            )
+            task_id = cursor.lastrowid
+        conn.commit()
+        return jsonify({"id": task_id, "status": "created"}), 201
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/tasks", methods=["GET"])
+def list_tasks():
+    publisher_id = (request.args.get("publisher_id") or "").strip()
+    acceptor_id = (request.args.get("acceptor_id") or "").strip()
+    if not publisher_id and not acceptor_id:
+        return jsonify({"error": "publisher_id or acceptor_id is required"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_tasks_table(conn)
+        ensure_acceptor_column(conn)
+        with conn.cursor(dictionary=True) as cursor:
+            if publisher_id:
+                cursor.execute(
+                    """
+                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location, reward, status, created_at
+                    FROM TASKS
+                    WHERE publisher_id = %s
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    (publisher_id,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location, reward, status, created_at
+                    FROM TASKS
+                    WHERE acceptor_id = %s
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    (acceptor_id,),
+                )
+            rows = cursor.fetchall()
+        return jsonify({"tasks": rows}), 200
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/tasks/<int:task_id>/status", methods=["PUT"])
+def update_task_status(task_id):
+    data = request.get_json(silent=True) or {}
+    new_status = (data.get("status") or "").strip()
+    if not new_status:
+        return jsonify({"error": "status is required"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_tasks_table(conn)
+        ensure_acceptor_column(conn)
+        ensure_balance_column(conn)
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT id, publisher_id, acceptor_id, reward, status FROM TASKS WHERE id = %s",
+                (task_id,),
+            )
+            task = cursor.fetchone()
+        if not task:
+            return jsonify({"error": "task not found"}), 404
+
+        if task["status"] == "待支付" and new_status == "已完成":
+            with conn.cursor(dictionary=True) as cursor:
+                cursor.execute(
+                    "SELECT balance FROM USERINFOS WHERE student_id = %s",
+                    (task["publisher_id"],),
+                )
+                user = cursor.fetchone()
+            if not user:
+                return jsonify({"error": "user not found"}), 404
+            if float(user["balance"]) < float(task["reward"]):
+                return jsonify({"error": "insufficient balance"}), 400
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE USERINFOS SET balance = balance - %s WHERE student_id = %s",
+                    (task["reward"], task["publisher_id"]),
+                )
+
+        acceptor_id = (data.get("acceptor_id") or "").strip()
+        if acceptor_id:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE TASKS SET status = %s, acceptor_id = %s WHERE id = %s",
+                    (new_status, acceptor_id, task_id),
+                )
+        else:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE TASKS SET status = %s WHERE id = %s",
+                    (new_status, task_id),
+                )
+        conn.commit()
+        return jsonify({"status": "updated"}), 200
     except mysql.connector.Error as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

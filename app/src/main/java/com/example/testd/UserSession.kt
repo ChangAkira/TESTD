@@ -7,7 +7,8 @@ data class UserInfo(
     val name: String,
     val username: String,
     val avatarFilename: String,
-    val avatarUrl: String
+    val avatarUrl: String,
+    val balance: Double
 )
 
 object UserSession {
@@ -17,6 +18,7 @@ object UserSession {
     private const val KEY_USERNAME = "username"
     private const val KEY_AVATAR_FILENAME = "avatar_filename"
     private const val KEY_AVATAR_URL = "avatar_url"
+    private const val KEY_BALANCE = "balance"
     private const val KEY_LOGGED_OUT = "logged_out"
 
     fun save(
@@ -25,7 +27,8 @@ object UserSession {
         name: String,
         username: String,
         avatarFilename: String,
-        avatarUrl: String
+        avatarUrl: String,
+        balance: Double
     ) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
@@ -34,6 +37,7 @@ object UserSession {
             .putString(KEY_USERNAME, username)
             .putString(KEY_AVATAR_FILENAME, avatarFilename)
             .putString(KEY_AVATAR_URL, avatarUrl)
+            .putFloat(KEY_BALANCE, balance.toFloat())
             .putBoolean(KEY_LOGGED_OUT, false)
             .apply()
     }
@@ -45,7 +49,8 @@ object UserSession {
         val username = prefs.getString(KEY_USERNAME, "") ?: ""
         val avatarFilename = prefs.getString(KEY_AVATAR_FILENAME, "") ?: ""
         val avatarUrl = prefs.getString(KEY_AVATAR_URL, "") ?: ""
-        return UserInfo(studentId, name, username, avatarFilename, avatarUrl)
+        val balance = prefs.getFloat(KEY_BALANCE, 0f).toDouble()
+        return UserInfo(studentId, name, username, avatarFilename, avatarUrl, balance)
     }
 
     fun isLoggedOut(context: Context): Boolean {

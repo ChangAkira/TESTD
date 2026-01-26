@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
         AppConfig.httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("UserFetch", "获取用户名失败", e)
-                UserSession.save(this@MainActivity, studentId, name, studentId, "", "")
+                UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0)
                 runOnUiThread {
                     navigateToHome()
                 }
@@ -228,18 +228,20 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         ""
                     }
+                    val balance = json.optDouble("balance", 0.0)
                     UserSession.save(
                         this@MainActivity,
                         studentId,
                         updatedName,
                         username,
                         avatarFilename,
-                        avatarUrl
+                        avatarUrl,
+                        balance
                     )
                 } else if (code == 404) {
-                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "")
+                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0)
                 } else {
-                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "")
+                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0)
                 }
                 runOnUiThread {
                     navigateToHome()

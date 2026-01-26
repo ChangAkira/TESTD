@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">TESTD</string>
     <string name="column1">栏目1</string>
-    <string name="column2">栏目2</string>
+    <string name="column2">我的</string>
     <string name="profile">个人</string>
     <string name="student_id_label">学号</string>
     <string name="name_label">姓名</string>
@@ -14,4 +14,20 @@
     <string name="choose_default_avatar">从默认头像中选择</string>
     <string name="choose_from_gallery">从相册上传</string>
     <string name="only_image_allowed">只允许选择PNG/JPG/GIF图片</string>
+    <string name="add_task">发布任务</string>
+    <string name="task_title">任务标题</string>
+    <string name="task_description">任务描述</string>
+    <string name="task_start_location">起始地点（点击选择）</string>
+    <string name="task_target_location">目标地点（点击选择）</string>
+    <string name="task_reward">酬劳</string>
+    <string name="task_submit">发布</string>
+    <string name="balance_label">余额</string>
+    <string name="my_published">我发布的</string>
+    <string name="my_accepted">我接单的</string>
+    <string name="search_keyword">输入关键词搜索</string>
+    <string name="search">搜索</string>
+    <string name="selecting_address">正在选择位置...</string>
+    <string name="add_favorite">收藏</string>
+    <string name="show_favorites">常用地址</string>
+    <string name="confirm">确定</string>
 </resources>

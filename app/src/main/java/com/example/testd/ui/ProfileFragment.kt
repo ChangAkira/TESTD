@@ -59,6 +59,7 @@ class ProfileFragment : Fragment() {
     private lateinit var tvStudentId: TextView
     private lateinit var tvName: TextView
     private lateinit var tvUsername: TextView
+    private lateinit var tvBalance: TextView
     private lateinit var etUsername: EditText
     private lateinit var btnUpdate: Button
     private lateinit var btnLogout: Button
@@ -73,6 +74,7 @@ class ProfileFragment : Fragment() {
         tvStudentId = view.findViewById(R.id.tvStudentId)
         tvName = view.findViewById(R.id.tvName)
         tvUsername = view.findViewById(R.id.tvUsername)
+        tvBalance = view.findViewById(R.id.tvBalance)
         etUsername = view.findViewById(R.id.etUsername)
         btnUpdate = view.findViewById(R.id.btnUpdateUsername)
         btnLogout = view.findViewById(R.id.btnLogout)
@@ -96,7 +98,60 @@ class ProfileFragment : Fragment() {
         tvStudentId.text = userInfo.studentId
         tvName.text = userInfo.name
         tvUsername.text = userInfo.username
+        tvBalance.text = String.format("%.2f", userInfo.balance)
         loadAvatar(userInfo.avatarUrl)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        fetchLatestBalance()
+    }
+
+    private fun fetchLatestBalance() {
+        val userInfo = UserSession.get(requireContext()) ?: return
+        val request = Request.Builder()
+            .url("${AppConfig.BASE_URL}/users/${userInfo.studentId}")
+            .get()
+            .build()
+
+        AppConfig.httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                requireActivity().runOnUiThread {
+                    refreshUserInfo()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string().orEmpty()
+                val code = response.code
+                response.close()
+                if (code == 200) {
+                    val json = JSONObject(body)
+                    val username = json.optString("username", userInfo.username)
+                    val name = json.optString("name", userInfo.name)
+                    val avatarFilename = json.optString("avatar_filename", userInfo.avatarFilename)
+                    val avatarPath = json.optString("avatar_url", "")
+                    val avatarUrl = if (avatarPath.isNotBlank()) {
+                        "${AppConfig.BASE_URL}$avatarPath"
+                    } else {
+                        userInfo.avatarUrl
+                    }
+                    val balance = json.optDouble("balance", userInfo.balance)
+                    UserSession.save(
+                        requireContext(),
+                        userInfo.studentId,
+                        name,
+                        username,
+                        avatarFilename,
+                        avatarUrl,
+                        balance
+                    )
+                }
+                requireActivity().runOnUiThread {
+                    refreshUserInfo()
+                }
+            }
+        })
     }
 
     private fun loadAvatar(avatarUrl: String) {
@@ -188,7 +243,8 @@ class ProfileFragment : Fragment() {
                         userInfo.name,
                         updatedUsername,
                         avatarFilename,
-                        avatarUrl
+                        avatarUrl,
+                        userInfo.balance
                     )
                     requireActivity().runOnUiThread {
                         etUsername.setText("")
@@ -246,7 +302,8 @@ class ProfileFragment : Fragment() {
                             userInfo.name,
                             userInfo.username,
                             avatarFilenameResp,
-                            avatarUrl
+                            avatarUrl,
+                            userInfo.balance
                         )
                     }
                     requireActivity().runOnUiThread {
@@ -307,7 +364,8 @@ class ProfileFragment : Fragment() {
                             userInfo.name,
                             userInfo.username,
                             avatarFilename,
-                            avatarUrl
+                            avatarUrl,
+                            userInfo.balance
                         )
                     }
                     requireActivity().runOnUiThread {
@@ -356,7 +414,8 @@ class ProfileFragment : Fragment() {
                         userInfo.name,
                         userInfo.username,
                         avatarFilename,
-                        avatarUrl
+                        avatarUrl,
+                        userInfo.balance
                     )
                 }
                 requireActivity().runOnUiThread {
