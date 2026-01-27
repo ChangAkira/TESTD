@@ -47,6 +47,7 @@ dependencies {
     implementation(libs.glide)
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.viewpager2)
+    implementation(libs.amap)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

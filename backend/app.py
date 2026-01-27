@@ -90,6 +90,10 @@ def ensure_tasks_table(conn):
         description TEXT,
         start_location VARCHAR(128),
         target_location VARCHAR(128),
+        start_lat DOUBLE,
+        start_lng DOUBLE,
+        target_lat DOUBLE,
+        target_lng DOUBLE,
         reward DECIMAL(10,2),
         status VARCHAR(32),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -105,6 +109,21 @@ def ensure_acceptor_column(conn):
         cursor.execute("SHOW COLUMNS FROM TASKS LIKE 'acceptor_id'")
         if cursor.fetchone() is None:
             cursor.execute("ALTER TABLE TASKS ADD COLUMN acceptor_id VARCHAR(64)")
+    conn.commit()
+
+
+def ensure_task_location_columns(conn):
+    columns = {
+        "start_lat": "DOUBLE",
+        "start_lng": "DOUBLE",
+        "target_lat": "DOUBLE",
+        "target_lng": "DOUBLE",
+    }
+    with conn.cursor() as cursor:
+        for column, col_type in columns.items():
+            cursor.execute("SHOW COLUMNS FROM TASKS LIKE %s", (column,))
+            if cursor.fetchone() is None:
+                cursor.execute(f"ALTER TABLE TASKS ADD COLUMN {column} {col_type}")
     conn.commit()
 
 
@@ -414,25 +433,52 @@ def create_task():
     description = (data.get("description") or "").strip()
     start_location = (data.get("start_location") or "").strip()
     target_location = (data.get("target_location") or "").strip()
+    start_lat = data.get("start_lat")
+    start_lng = data.get("start_lng")
+    target_lat = data.get("target_lat")
+    target_lng = data.get("target_lng")
     reward = data.get("reward")
 
     if not publisher_id or not title or reward is None:
         return jsonify({"error": "publisher_id, title and reward are required"}), 400
+    if start_lat is None or start_lng is None or target_lat is None or target_lng is None:
+        return jsonify({"error": "start_lat, start_lng, target_lat, target_lng are required"}), 400
 
     try:
         reward_value = float(reward)
     except (TypeError, ValueError):
         return jsonify({"error": "reward must be a number"}), 400
+    try:
+        start_lat_value = float(start_lat)
+        start_lng_value = float(start_lng)
+        target_lat_value = float(target_lat)
+        target_lng_value = float(target_lng)
+    except (TypeError, ValueError):
+        return jsonify({"error": "lat/lng must be numbers"}), 400
 
     conn = None
     try:
         conn = get_connection()
         ensure_tasks_table(conn)
         ensure_acceptor_column(conn)
+        ensure_task_location_columns(conn)
         with conn.cursor() as cursor:
             insert_sql = """
-            INSERT INTO TASKS (publisher_id, acceptor_id, title, description, start_location, target_location, reward, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO TASKS (
+                publisher_id,
+                acceptor_id,
+                title,
+                description,
+                start_location,
+                target_location,
+                start_lat,
+                start_lng,
+                target_lat,
+                target_lng,
+                reward,
+                status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             cursor.execute(
                 insert_sql,
@@ -443,6 +489,10 @@ def create_task():
                     description,
                     start_location,
                     target_location,
+                    start_lat_value,
+                    start_lng_value,
+                    target_lat_value,
+                    target_lng_value,
                     reward_value,
                     "等待接单",
                 ),
@@ -469,11 +519,13 @@ def list_tasks():
         conn = get_connection()
         ensure_tasks_table(conn)
         ensure_acceptor_column(conn)
+        ensure_task_location_columns(conn)
         with conn.cursor(dictionary=True) as cursor:
             if publisher_id:
                 cursor.execute(
                     """
-                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location, reward, status, created_at
+                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location,
+                           start_lat, start_lng, target_lat, target_lng, reward, status, created_at
                     FROM TASKS
                     WHERE publisher_id = %s
                     ORDER BY created_at DESC, id DESC
@@ -483,7 +535,8 @@ def list_tasks():
             else:
                 cursor.execute(
                     """
-                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location, reward, status, created_at
+                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location,
+                           start_lat, start_lng, target_lat, target_lng, reward, status, created_at
                     FROM TASKS
                     WHERE acceptor_id = %s
                     ORDER BY created_at DESC, id DESC

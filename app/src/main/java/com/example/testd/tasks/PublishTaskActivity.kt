@@ -1,9 +1,11 @@
 package com.example.testd.tasks
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.example.testd.AppConfig
 import com.example.testd.R
@@ -24,6 +26,32 @@ class PublishTaskActivity : AppCompatActivity() {
     private lateinit var etTargetLocation: EditText
     private lateinit var etReward: EditText
     private lateinit var btnSubmit: Button
+    private var startLat: Double? = null
+    private var startLng: Double? = null
+    private var targetLat: Double? = null
+    private var targetLng: Double? = null
+
+    private val mapSelectionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        val data = result.data ?: return@registerForActivityResult
+        val name = data.getStringExtra(MapSelectionActivity.EXTRA_SELECTED_NAME).orEmpty()
+        val lat = data.getDoubleExtra(MapSelectionActivity.EXTRA_SELECTED_LAT, Double.NaN)
+        val lng = data.getDoubleExtra(MapSelectionActivity.EXTRA_SELECTED_LNG, Double.NaN)
+        val selectType = data.getStringExtra(MapSelectionActivity.EXTRA_SELECT_TYPE)
+            ?: MapSelectionActivity.TYPE_START
+        if (lat.isNaN() || lng.isNaN() || name.isBlank()) return@registerForActivityResult
+        if (selectType == MapSelectionActivity.TYPE_START) {
+            etStartLocation.setText(name)
+            startLat = lat
+            startLng = lng
+        } else {
+            etTargetLocation.setText(name)
+            targetLat = lat
+            targetLng = lng
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,7 +64,19 @@ class PublishTaskActivity : AppCompatActivity() {
         etReward = findViewById(R.id.etTaskReward)
         btnSubmit = findViewById(R.id.btnSubmitTask)
 
+        etStartLocation.setOnClickListener {
+            launchMapSelection(MapSelectionActivity.TYPE_START)
+        }
+        etTargetLocation.setOnClickListener {
+            launchMapSelection(MapSelectionActivity.TYPE_TARGET)
+        }
         btnSubmit.setOnClickListener { submitTask() }
+    }
+
+    private fun launchMapSelection(type: String) {
+        val intent = Intent(this, MapSelectionActivity::class.java)
+        intent.putExtra(MapSelectionActivity.EXTRA_SELECT_TYPE, type)
+        mapSelectionLauncher.launch(intent)
     }
 
     private fun submitTask() {
@@ -51,8 +91,8 @@ class PublishTaskActivity : AppCompatActivity() {
         val targetLocation = etTargetLocation.text.toString().trim()
         val rewardText = etReward.text.toString().trim()
 
-        if (title.isEmpty() || rewardText.isEmpty()) {
-            Toast.makeText(this, "请填写标题和酬劳", Toast.LENGTH_SHORT).show()
+        if (title.isEmpty() || rewardText.isEmpty() || startLocation.isEmpty() || targetLocation.isEmpty()) {
+            Toast.makeText(this, "请填写标题、酬劳和地点", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -62,12 +102,21 @@ class PublishTaskActivity : AppCompatActivity() {
             return
         }
 
+        if (startLat == null || startLng == null || targetLat == null || targetLng == null) {
+            Toast.makeText(this, "请通过地图选择起点和终点", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val payload = JSONObject()
         payload.put("publisher_id", userInfo.studentId)
         payload.put("title", title)
         payload.put("description", description)
         payload.put("start_location", startLocation)
         payload.put("target_location", targetLocation)
+        payload.put("start_lat", startLat)
+        payload.put("start_lng", startLng)
+        payload.put("target_lat", targetLat)
+        payload.put("target_lng", targetLng)
         payload.put("reward", reward)
 
         val mediaType = "application/json; charset=utf-8".toMediaType()

@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -23,6 +25,10 @@
 
         tools:targetApi="31">
 
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="0b1ee70a99778ebb2f026a4184b89092" />
+
         <activity
             android:name=".BlankActivity"
             android:exported="false" />
@@ -33,6 +39,10 @@
 
         <activity
             android:name=".tasks.PublishTaskActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".tasks.MapSelectionActivity"
             android:exported="false" />
 
         <activity

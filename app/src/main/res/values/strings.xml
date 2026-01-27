@@ -30,4 +30,11 @@
     <string name="add_favorite">收藏</string>
     <string name="show_favorites">常用地址</string>
     <string name="confirm">确定</string>
+    <string name="map_pin_desc">选点标记</string>
+    <string name="map_search_hint">搜索地点，如“第三食堂”</string>
+    <string name="map_search">搜索</string>
+    <string name="map_show_favorites">常用地址</string>
+    <string name="map_selected_address_placeholder">请选择位置</string>
+    <string name="map_save_favorite">保存常用</string>
+    <string name="map_confirm">确定</string>
 </resources>
