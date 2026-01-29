@@ -1,6 +1,7 @@
 package com.example.testd.ui
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -20,6 +21,7 @@ import com.example.testd.MainActivity
 import com.example.testd.R
 import com.example.testd.UserSession
 import com.bumptech.glide.Glide
+import com.yalantis.ucrop.UCrop
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -28,6 +30,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 
 class ProfileFragment : Fragment() {
@@ -39,6 +42,8 @@ class ProfileFragment : Fragment() {
         "default (5).png"
     )
 
+    private var isEditingUsername = false
+
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
@@ -48,11 +53,37 @@ class ProfileFragment : Fragment() {
             Toast.makeText(requireContext(), getString(R.string.only_image_allowed), Toast.LENGTH_SHORT).show()
             return@registerForActivityResult
         }
-        val userInfo = UserSession.get(requireContext()) ?: return@registerForActivityResult
-        val inputStream = requireContext().contentResolver.openInputStream(uri) ?: return@registerForActivityResult
-        val bytes = inputStream.readBytes()
-        inputStream.close()
-        uploadAvatar(userInfo.studentId, bytes, mimeType)
+        startCrop(uri)
+    }
+
+    private val cropImageLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            val resultUri = UCrop.getOutput(result.data!!)
+            if (resultUri != null) {
+                val userInfo = UserSession.get(requireContext()) ?: return@registerForActivityResult
+                val inputStream = requireContext().contentResolver.openInputStream(resultUri) ?: return@registerForActivityResult
+                val bytes = inputStream.readBytes()
+                inputStream.close()
+                val mimeType = requireContext().contentResolver.getType(resultUri) ?: "image/jpeg"
+                uploadAvatar(userInfo.studentId, bytes, mimeType)
+            }
+        } else if (result.resultCode == UCrop.RESULT_ERROR && result.data != null) {
+            val cropError = UCrop.getError(result.data!!)
+            Toast.makeText(requireContext(), "裁剪失败: ${cropError?.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun startCrop(sourceUri: Uri) {
+        val destinationUri = Uri.fromFile(File(requireContext().cacheDir, "cropped_avatar_${System.currentTimeMillis()}.jpg"))
+        val options = UCrop.Options()
+        options.setCompressionQuality(90)
+        val intent = UCrop.of(sourceUri, destinationUri)
+            .withAspectRatio(1f, 1f)
+            .withOptions(options)
+            .getIntent(requireContext())
+        cropImageLauncher.launch(intent)
     }
 
     private lateinit var ivAvatar: ImageView
@@ -82,6 +113,7 @@ class ProfileFragment : Fragment() {
         refreshUserInfo()
 
         ivAvatar.setOnClickListener { showAvatarOptions() }
+        tvUsername.setOnClickListener { enterEditMode() }
         btnUpdate.setOnClickListener { updateUsername() }
         btnLogout.setOnClickListener { logout() }
         return view
@@ -97,9 +129,34 @@ class ProfileFragment : Fragment() {
         }
         tvStudentId.text = userInfo.studentId
         tvName.text = userInfo.name
-        tvUsername.text = userInfo.username
+        
+        if (!isEditingUsername) {
+            tvUsername.text = userInfo.username
+            tvUsername.visibility = View.VISIBLE
+            etUsername.visibility = View.GONE
+            btnUpdate.visibility = View.GONE
+        }
+        
         tvBalance.text = String.format("%.2f", userInfo.balance)
         loadAvatar(userInfo.avatarUrl)
+    }
+
+    private fun enterEditMode() {
+        val userInfo = UserSession.get(requireContext()) ?: return
+        isEditingUsername = true
+        etUsername.setText(userInfo.username)
+        tvUsername.visibility = View.GONE
+        etUsername.visibility = View.VISIBLE
+        btnUpdate.visibility = View.VISIBLE
+        etUsername.requestFocus()
+    }
+
+    private fun exitEditMode() {
+        isEditingUsername = false
+        tvUsername.visibility = View.VISIBLE
+        etUsername.visibility = View.GONE
+        btnUpdate.visibility = View.GONE
+        etUsername.setText("")
     }
 
     override fun onResume() {
@@ -254,7 +311,7 @@ class ProfileFragment : Fragment() {
                         userInfo.balance
                     )
                     requireActivity().runOnUiThread {
-                        etUsername.setText("")
+                        exitEditMode()
                         refreshUserInfo()
                         Toast.makeText(requireContext(), "更新成功", Toast.LENGTH_SHORT).show()
                     }
