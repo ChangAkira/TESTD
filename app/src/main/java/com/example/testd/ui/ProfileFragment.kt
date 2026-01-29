@@ -161,8 +161,15 @@ class ProfileFragment : Fragment() {
                 .into(ivAvatar)
             return
         }
+        // 添加强制刷新：在URL后添加时间戳参数，避免Glide缓存旧图片
+        // 这样可以确保每次加载时都获取最新图片
+        val urlWithTimestamp = if (avatarUrl.contains("?")) {
+            "$avatarUrl&t=${System.currentTimeMillis()}"
+        } else {
+            "$avatarUrl?t=${System.currentTimeMillis()}"
+        }
         Glide.with(this)
-            .load(avatarUrl)
+            .load(urlWithTimestamp)
             .placeholder(android.R.drawable.sym_def_app_icon)
             .into(ivAvatar)
     }
@@ -307,6 +314,12 @@ class ProfileFragment : Fragment() {
                         )
                     }
                     requireActivity().runOnUiThread {
+                        // 清除Glide缓存以确保显示最新头像
+                        Glide.get(requireContext()).clearMemory()
+                        // 在后台线程清除磁盘缓存
+                        Thread {
+                            Glide.get(requireContext()).clearDiskCache()
+                        }.start()
                         fetchLatestAvatar()
                     }
                 } else {
@@ -369,6 +382,12 @@ class ProfileFragment : Fragment() {
                         )
                     }
                     requireActivity().runOnUiThread {
+                        // 清除Glide缓存以确保显示最新头像
+                        Glide.get(requireContext()).clearMemory()
+                        // 在后台线程清除磁盘缓存
+                        Thread {
+                            Glide.get(requireContext()).clearDiskCache()
+                        }.start()
                         fetchLatestAvatar()
                         Toast.makeText(requireContext(), "上传成功", Toast.LENGTH_SHORT).show()
                     }
