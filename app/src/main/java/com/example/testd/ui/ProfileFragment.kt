@@ -1,7 +1,9 @@
 package com.example.testd.ui
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -43,17 +45,38 @@ class ProfileFragment : Fragment() {
     )
 
     private var isEditingUsername = false
+    private var pendingCropMimeType: String? = null
 
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri == null) return@registerForActivityResult
         val mimeType = requireContext().contentResolver.getType(uri)
-        if (mimeType != "image/jpeg" && mimeType != "image/jpg" && mimeType != "image/png" && mimeType != "image/gif") {
+        if (mimeType != "image/jpeg" &&
+            mimeType != "image/jpg" &&
+            mimeType != "image/png" &&
+            mimeType != "image/gif" &&
+            mimeType != "image/webp" &&
+            mimeType != "image/bmp" &&
+            mimeType != "image/heic" &&
+            mimeType != "image/heif"
+        ) {
             Toast.makeText(requireContext(), getString(R.string.only_image_allowed), Toast.LENGTH_SHORT).show()
             return@registerForActivityResult
         }
-        startCrop(uri)
+        if (mimeType == "image/gif" ||
+            mimeType == "image/bmp" ||
+            mimeType == "image/heic" ||
+            mimeType == "image/heif"
+        ) {
+            val userInfo = UserSession.get(requireContext()) ?: return@registerForActivityResult
+            val inputStream = requireContext().contentResolver.openInputStream(uri) ?: return@registerForActivityResult
+            val bytes = inputStream.readBytes()
+            inputStream.close()
+            uploadAvatar(userInfo.studentId, bytes, mimeType)
+            return@registerForActivityResult
+        }
+        startCrop(uri, mimeType)
     }
 
     private val cropImageLauncher = registerForActivityResult(
@@ -66,24 +89,60 @@ class ProfileFragment : Fragment() {
                 val inputStream = requireContext().contentResolver.openInputStream(resultUri) ?: return@registerForActivityResult
                 val bytes = inputStream.readBytes()
                 inputStream.close()
-                val mimeType = requireContext().contentResolver.getType(resultUri) ?: "image/jpeg"
+                val mimeType = requireContext().contentResolver.getType(resultUri)
+                    ?: pendingCropMimeType
+                    ?: "image/jpeg"
                 uploadAvatar(userInfo.studentId, bytes, mimeType)
+                pendingCropMimeType = null
             }
         } else if (result.resultCode == UCrop.RESULT_ERROR && result.data != null) {
             val cropError = UCrop.getError(result.data!!)
             Toast.makeText(requireContext(), "裁剪失败: ${cropError?.message}", Toast.LENGTH_SHORT).show()
+            pendingCropMimeType = null
         }
     }
 
-    private fun startCrop(sourceUri: Uri) {
-        val destinationUri = Uri.fromFile(File(requireContext().cacheDir, "cropped_avatar_${System.currentTimeMillis()}.jpg"))
+    private fun startCrop(sourceUri: Uri, mimeType: String) {
+        val extension = mimeTypeToExtension(mimeType)
+        pendingCropMimeType = mimeType
+        val destinationUri = Uri.fromFile(
+            File(requireContext().cacheDir, "cropped_avatar_${System.currentTimeMillis()}.$extension")
+        )
         val options = UCrop.Options()
+        options.setCompressionFormat(mimeTypeToCompressFormat(mimeType))
         options.setCompressionQuality(90)
         val intent = UCrop.of(sourceUri, destinationUri)
             .withAspectRatio(1f, 1f)
             .withOptions(options)
             .getIntent(requireContext())
         cropImageLauncher.launch(intent)
+    }
+
+    private fun mimeTypeToExtension(mimeType: String): String {
+        return when (mimeType) {
+            "image/png" -> "png"
+            "image/gif" -> "gif"
+            "image/webp" -> "webp"
+            "image/bmp" -> "bmp"
+            "image/heic", "image/heif" -> "heic"
+            "image/jpeg", "image/jpg" -> "jpg"
+            else -> "jpg"
+        }
+    }
+
+    private fun mimeTypeToCompressFormat(mimeType: String): Bitmap.CompressFormat {
+        return when (mimeType) {
+            "image/png" -> Bitmap.CompressFormat.PNG
+            "image/webp" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Bitmap.CompressFormat.WEBP_LOSSLESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    Bitmap.CompressFormat.WEBP
+                }
+            }
+            else -> Bitmap.CompressFormat.JPEG
+        }
     }
 
     private lateinit var ivAvatar: ImageView
@@ -394,6 +453,10 @@ class ProfileFragment : Fragment() {
         val extension = when (mimeType) {
             "image/png" -> "png"
             "image/gif" -> "gif"
+            "image/webp" -> "webp"
+            "image/bmp" -> "bmp"
+            "image/heic", "image/heif" -> "heic"
+            "image/jpeg", "image/jpg" -> "jpg"
             else -> "jpg"
         }
         val multipart = MultipartBody.Builder()

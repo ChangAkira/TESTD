@@ -51,9 +51,27 @@ def is_allowed_image(filename, content_type):
     if not filename:
         return False
     lower = filename.lower()
-    if not (lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".png") or lower.endswith(".gif")):
+    if not (
+        lower.endswith(".jpg")
+        or lower.endswith(".jpeg")
+        or lower.endswith(".png")
+        or lower.endswith(".gif")
+        or lower.endswith(".webp")
+        or lower.endswith(".bmp")
+        or lower.endswith(".heic")
+        or lower.endswith(".heif")
+    ):
         return False
-    if content_type and content_type not in ("image/jpeg", "image/jpg", "image/png", "image/gif"):
+    if content_type and content_type not in (
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/heic",
+        "image/heif",
+    ):
         return False
     return True
 
@@ -67,6 +85,10 @@ def is_user_avatar(filename, student_id):
         f"{student_id.lower()}.jpeg",
         f"{student_id.lower()}.png",
         f"{student_id.lower()}.gif",
+        f"{student_id.lower()}.webp",
+        f"{student_id.lower()}.bmp",
+        f"{student_id.lower()}.heic",
+        f"{student_id.lower()}.heif",
     )
 
 
@@ -377,7 +399,7 @@ def upload_avatar(student_id):
 
     avatar_file = request.files["avatar"]
     if not is_allowed_image(avatar_file.filename, avatar_file.content_type):
-        return jsonify({"error": "only png/jpg/gif are allowed"}), 400
+        return jsonify({"error": "only png/jpg/gif/webp/bmp/heic/heif are allowed"}), 400
 
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
     ext = os.path.splitext(avatar_file.filename)[1].lower()
