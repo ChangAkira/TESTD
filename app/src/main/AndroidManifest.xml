@@ -42,6 +42,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".tasks.TaskDetailActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".tasks.MapSelectionActivity"
             android:exported="false" />
 

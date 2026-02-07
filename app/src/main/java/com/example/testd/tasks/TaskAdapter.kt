@@ -12,6 +12,8 @@ class TaskAdapter(
     private val items: MutableList<TaskItem>
 ) : RecyclerView.Adapter<TaskAdapter.TaskViewHolder>() {
 
+    var onItemClick: ((TaskItem) -> Unit)? = null
+
     fun updateData(newItems: List<TaskItem>) {
         items.clear()
         items.addAll(newItems)
@@ -31,6 +33,9 @@ class TaskAdapter(
         holder.tvReward.text = String.format(Locale.getDefault(), "酬劳：%.2f", item.reward)
         holder.tvDescription.text = item.description
         holder.tvLocations.text = "起点：${item.startLocation}  终点：${item.targetLocation}"
+        holder.itemView.setOnClickListener {
+            onItemClick?.invoke(item)
+        }
     }
 
     override fun getItemCount(): Int = items.size

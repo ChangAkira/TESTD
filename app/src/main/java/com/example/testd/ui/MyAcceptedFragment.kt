@@ -12,6 +12,7 @@ import com.example.testd.AppConfig
 import com.example.testd.R
 import com.example.testd.UserSession
 import com.example.testd.tasks.TaskAdapter
+import com.example.testd.tasks.TaskDetailActivity
 import com.example.testd.tasks.TaskItem
 import okhttp3.Call
 import okhttp3.Callback
@@ -36,6 +37,11 @@ class MyAcceptedFragment : Fragment() {
         taskAdapter = TaskAdapter(mutableListOf())
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
         recyclerView.adapter = taskAdapter
+        taskAdapter.onItemClick = { task ->
+            val intent = android.content.Intent(requireContext(), TaskDetailActivity::class.java)
+            intent.putExtra(TaskDetailActivity.EXTRA_TASK_ID, task.id)
+            startActivity(intent)
+        }
         return view
     }
 

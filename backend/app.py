@@ -574,6 +574,87 @@ def list_tasks():
             conn.close()
 
 
+@app.route("/tasks/<int:task_id>", methods=["GET"])
+def get_task_detail(task_id):
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_tasks_table(conn)
+        ensure_acceptor_column(conn)
+        ensure_task_location_columns(conn)
+        ensure_table_exists(conn)
+        ensure_avatar_column(conn)
+
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location,
+                       start_lat, start_lng, target_lat, target_lng, reward, status, created_at
+                FROM TASKS
+                WHERE id = %s
+                """,
+                (task_id,),
+            )
+            task = cursor.fetchone()
+
+        if not task:
+            return jsonify({"error": "task not found"}), 404
+
+        def get_user_brief(student_id):
+            if not student_id:
+                return None
+            with conn.cursor(dictionary=True) as cursor:
+                cursor.execute(
+                    "SELECT student_id, username, avatar_filename FROM USERINFOS WHERE student_id = %s",
+                    (student_id,),
+                )
+                row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "student_id": row.get("student_id"),
+                "username": row.get("username") or row.get("student_id"),
+                "avatar_url": build_avatar_url(row.get("avatar_filename")),
+            }
+
+        publisher = get_user_brief(task.get("publisher_id"))
+        acceptor = get_user_brief(task.get("acceptor_id"))
+
+        created_at = task.get("created_at")
+        if created_at:
+            try:
+                created_at = created_at.strftime("%Y-%m-%d %H:%M")
+            except AttributeError:
+                created_at = str(created_at)
+
+        payload = {
+            "id": task.get("id"),
+            "publisher_id": task.get("publisher_id"),
+            "acceptor_id": task.get("acceptor_id"),
+            "title": task.get("title"),
+            "description": task.get("description"),
+            "start_location": task.get("start_location"),
+            "target_location": task.get("target_location"),
+            "start_lat": task.get("start_lat"),
+            "start_lng": task.get("start_lng"),
+            "target_lat": task.get("target_lat"),
+            "target_lng": task.get("target_lng"),
+            "reward": task.get("reward"),
+            "status": task.get("status"),
+            "created_at": created_at,
+            "publisher_username": publisher.get("username") if publisher else None,
+            "publisher_avatar_url": publisher.get("avatar_url") if publisher else None,
+            "acceptor_username": acceptor.get("username") if acceptor else None,
+            "acceptor_avatar_url": acceptor.get("avatar_url") if acceptor else None,
+        }
+        return jsonify(payload), 200
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 @app.route("/tasks/<int:task_id>/status", methods=["PUT"])
 def update_task_status(task_id):
     data = request.get_json(silent=True) or {}

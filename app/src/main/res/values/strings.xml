@@ -37,4 +37,13 @@
     <string name="map_selected_address_placeholder">请选择位置</string>
     <string name="map_save_favorite">保存常用</string>
     <string name="map_confirm">确定</string>
+    <string name="task_detail_invalid">任务信息无效</string>
+    <string name="task_detail_load_failed">任务详情加载失败</string>
+    <string name="task_detail_status">状态：%s</string>
+    <string name="task_detail_locations">起点：%1$s  终点：%2$s</string>
+    <string name="task_detail_reward_format">酬劳：%.2f</string>
+    <string name="task_detail_created_at">发布时间：%s</string>
+    <string name="task_detail_unknown_user">未知用户</string>
+    <string name="task_detail_publisher">发布者</string>
+    <string name="task_detail_acceptor">接单者</string>
 </resources>

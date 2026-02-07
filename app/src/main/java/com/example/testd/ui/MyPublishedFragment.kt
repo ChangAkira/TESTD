@@ -13,6 +13,7 @@ import com.example.testd.R
 import com.example.testd.UserSession
 import com.example.testd.tasks.PublishTaskActivity
 import com.example.testd.tasks.TaskAdapter
+import com.example.testd.tasks.TaskDetailActivity
 import com.example.testd.tasks.TaskItem
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import okhttp3.Call
@@ -40,6 +41,11 @@ class MyPublishedFragment : Fragment() {
         taskAdapter = TaskAdapter(mutableListOf())
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
         recyclerView.adapter = taskAdapter
+        taskAdapter.onItemClick = { task ->
+            val intent = android.content.Intent(requireContext(), TaskDetailActivity::class.java)
+            intent.putExtra(TaskDetailActivity.EXTRA_TASK_ID, task.id)
+            startActivity(intent)
+        }
 
         fabAdd.setOnClickListener {
             val intent = android.content.Intent(requireContext(), PublishTaskActivity::class.java)
