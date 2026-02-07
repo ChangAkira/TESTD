@@ -11,5 +11,6 @@ data class TaskItem(
     val startLat: Double? = null,
     val startLng: Double? = null,
     val targetLat: Double? = null,
-    val targetLng: Double? = null
+    val targetLng: Double? = null,
+    val acceptorStars: Int? = null
 )

@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
         AppConfig.httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e("UserFetch", "获取用户名失败", e)
-                UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0)
+                UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0, 0)
                 runOnUiThread {
                     navigateToHome()
                 }
@@ -229,6 +229,7 @@ class MainActivity : AppCompatActivity() {
                         ""
                     }
                     val balance = json.optDouble("balance", 0.0)
+                    val stars = json.optInt("stars", 0)
                     UserSession.save(
                         this@MainActivity,
                         studentId,
@@ -236,12 +237,13 @@ class MainActivity : AppCompatActivity() {
                         username,
                         avatarFilename,
                         avatarUrl,
-                        balance
+                        balance,
+                        stars
                     )
                 } else if (code == 404) {
-                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0)
+                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0, 0)
                 } else {
-                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0)
+                    UserSession.save(this@MainActivity, studentId, name, studentId, "", "", 0.0, 0)
                 }
                 runOnUiThread {
                     navigateToHome()

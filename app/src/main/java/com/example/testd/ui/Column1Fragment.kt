@@ -44,6 +44,7 @@ class Column1Fragment : Fragment() {
     private val pageSize = 15
 
     private var locationClient: AMapLocationClient? = null
+    private var hasLoadedOnce = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -74,6 +75,7 @@ class Column1Fragment : Fragment() {
         taskAdapter.onItemClick = { task ->
             val intent = android.content.Intent(requireContext(), TaskDetailActivity::class.java)
             intent.putExtra(TaskDetailActivity.EXTRA_TASK_ID, task.id)
+            intent.putExtra(TaskDetailActivity.EXTRA_SOURCE, TaskDetailActivity.SOURCE_HALL)
             startActivity(intent)
         }
 
@@ -109,6 +111,15 @@ class Column1Fragment : Fragment() {
         swipeRefresh.isRefreshing = true
         refreshFirstPage()
         return view
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (hasLoadedOnce && !isLoading) {
+            swipeRefresh.isRefreshing = true
+            refreshFirstPage()
+        }
+        hasLoadedOnce = true
     }
 
     override fun onDestroyView() {

@@ -28,6 +28,10 @@ class MyPublishedFragment : Fragment() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var taskAdapter: TaskAdapter
     private lateinit var fabAdd: FloatingActionButton
+    private var currentPage = 1
+    private var isLoading = false
+    private var hasMore = true
+    private val pageSize = 15
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -44,8 +48,21 @@ class MyPublishedFragment : Fragment() {
         taskAdapter.onItemClick = { task ->
             val intent = android.content.Intent(requireContext(), TaskDetailActivity::class.java)
             intent.putExtra(TaskDetailActivity.EXTRA_TASK_ID, task.id)
+            intent.putExtra(TaskDetailActivity.EXTRA_SOURCE, TaskDetailActivity.SOURCE_PUBLISHED)
             startActivity(intent)
         }
+
+        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0) return
+                val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                val total = layoutManager.itemCount
+                val lastVisible = layoutManager.findLastVisibleItemPosition()
+                if (!isLoading && hasMore && total > 0 && lastVisible >= total - 3) {
+                    loadNextPage()
+                }
+            }
+        })
 
         fabAdd.setOnClickListener {
             val intent = android.content.Intent(requireContext(), PublishTaskActivity::class.java)
@@ -56,19 +73,32 @@ class MyPublishedFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        fetchTasks()
+        refreshFirstPage()
     }
 
-    private fun fetchTasks() {
+    private fun refreshFirstPage() {
+        currentPage = 1
+        hasMore = true
+        fetchTasks(page = 1, isRefresh = true)
+    }
+
+    private fun loadNextPage() {
+        fetchTasks(page = currentPage + 1, isRefresh = false)
+    }
+
+    private fun fetchTasks(page: Int, isRefresh: Boolean) {
+        if (isLoading) return
+        isLoading = true
         val userInfo = UserSession.get(requireContext()) ?: return
         val request = Request.Builder()
-            .url("${AppConfig.BASE_URL}/tasks?publisher_id=${userInfo.studentId}")
+            .url("${AppConfig.BASE_URL}/tasks?publisher_id=${userInfo.studentId}&page=$page&page_size=$pageSize")
             .get()
             .build()
 
         AppConfig.httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 requireActivity().runOnUiThread {
+                    isLoading = false
                     Toast.makeText(requireContext(), "任务加载失败", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -81,10 +111,22 @@ class MyPublishedFragment : Fragment() {
                     val json = JSONObject(body)
                     val list = parseTasks(json.optJSONArray("tasks") ?: JSONArray())
                     requireActivity().runOnUiThread {
-                        taskAdapter.updateData(list)
+                        isLoading = false
+                        if (isRefresh) {
+                            taskAdapter.updateData(list)
+                        } else {
+                            taskAdapter.appendData(list)
+                        }
+                        hasMore = list.size >= pageSize
+                        if (list.isNotEmpty()) {
+                            currentPage = page
+                        } else if (isRefresh) {
+                            currentPage = 1
+                        }
                     }
                 } else {
                     requireActivity().runOnUiThread {
+                        isLoading = false
                         Toast.makeText(requireContext(), "任务加载失败", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -96,6 +138,21 @@ class MyPublishedFragment : Fragment() {
         val items = mutableListOf<TaskItem>()
         for (index in 0 until array.length()) {
             val obj = array.optJSONObject(index) ?: continue
+            val startLat = if (obj.has("start_lat") && !obj.isNull("start_lat")) {
+                obj.optDouble("start_lat")
+            } else null
+            val startLng = if (obj.has("start_lng") && !obj.isNull("start_lng")) {
+                obj.optDouble("start_lng")
+            } else null
+            val targetLat = if (obj.has("target_lat") && !obj.isNull("target_lat")) {
+                obj.optDouble("target_lat")
+            } else null
+            val targetLng = if (obj.has("target_lng") && !obj.isNull("target_lng")) {
+                obj.optDouble("target_lng")
+            } else null
+            val acceptorStars = if (obj.has("acceptor_stars") && !obj.isNull("acceptor_stars")) {
+                obj.optInt("acceptor_stars")
+            } else null
             items.add(
                 TaskItem(
                     id = obj.optInt("id"),
@@ -104,7 +161,12 @@ class MyPublishedFragment : Fragment() {
                     startLocation = obj.optString("start_location"),
                     targetLocation = obj.optString("target_location"),
                     reward = obj.optDouble("reward", 0.0),
-                    status = obj.optString("status")
+                    status = obj.optString("status"),
+                    startLat = startLat,
+                    startLng = startLng,
+                    targetLat = targetLat,
+                    targetLng = targetLng,
+                    acceptorStars = acceptorStars
                 )
             )
         }

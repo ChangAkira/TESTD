@@ -9,11 +9,34 @@
         android:id="@+id/tvTaskTitle"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
         android:textStyle="bold"
         android:textSize="16sp"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/ivTaskFlag"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <ImageView
+        android:id="@+id/ivTaskFlag"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:contentDescription="@string/task_flag"
+        android:src="@drawable/ic_flag"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/tvTaskTitle"
+        app:layout_constraintEnd_toStartOf="@id/ivTaskFinish"
+        app:layout_constraintTop_toTopOf="@id/tvTaskTitle" />
+
+    <ImageView
+        android:id="@+id/ivTaskFinish"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:contentDescription="@string/task_finish"
+        android:src="@drawable/ic_finish"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/tvTaskTitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/tvTaskTitle" />
 
     <TextView
         android:id="@+id/tvTaskStatus"
@@ -47,5 +70,15 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tvTaskDescription" />
+
+    <TextView
+        android:id="@+id/tvTaskAcceptorStars"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvTaskLocations" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

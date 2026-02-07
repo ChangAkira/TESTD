@@ -150,6 +150,7 @@ class ProfileFragment : Fragment() {
     private lateinit var tvName: TextView
     private lateinit var tvUsername: TextView
     private lateinit var tvBalance: TextView
+    private lateinit var tvStars: TextView
     private lateinit var etUsername: EditText
     private lateinit var btnUpdate: Button
     private lateinit var btnLogout: Button
@@ -165,6 +166,7 @@ class ProfileFragment : Fragment() {
         tvName = view.findViewById(R.id.tvName)
         tvUsername = view.findViewById(R.id.tvUsername)
         tvBalance = view.findViewById(R.id.tvBalance)
+        tvStars = view.findViewById(R.id.tvStars)
         etUsername = view.findViewById(R.id.etUsername)
         btnUpdate = view.findViewById(R.id.btnUpdateUsername)
         btnLogout = view.findViewById(R.id.btnLogout)
@@ -184,6 +186,7 @@ class ProfileFragment : Fragment() {
             tvStudentId.text = "--"
             tvName.text = "--"
             tvUsername.text = "--"
+            tvStars.text = "--"
             return
         }
         tvStudentId.text = userInfo.studentId
@@ -197,6 +200,7 @@ class ProfileFragment : Fragment() {
         }
         
         tvBalance.text = String.format("%.2f", userInfo.balance)
+        tvStars.text = userInfo.stars.toString()
         loadAvatar(userInfo.avatarUrl)
     }
 
@@ -253,6 +257,7 @@ class ProfileFragment : Fragment() {
                         userInfo.avatarUrl
                     }
                     val balance = json.optDouble("balance", userInfo.balance)
+                    val stars = json.optInt("stars", userInfo.stars)
                     UserSession.save(
                         requireContext(),
                         userInfo.studentId,
@@ -260,7 +265,8 @@ class ProfileFragment : Fragment() {
                         username,
                         avatarFilename,
                         avatarUrl,
-                        balance
+                        balance,
+                        stars
                     )
                 }
                 requireActivity().runOnUiThread {
@@ -367,7 +373,8 @@ class ProfileFragment : Fragment() {
                         updatedUsername,
                         avatarFilename,
                         avatarUrl,
-                        userInfo.balance
+                        userInfo.balance,
+                        userInfo.stars
                     )
                     requireActivity().runOnUiThread {
                         exitEditMode()
@@ -426,7 +433,8 @@ class ProfileFragment : Fragment() {
                             userInfo.username,
                             avatarFilenameResp,
                             avatarUrl,
-                            userInfo.balance
+                            userInfo.balance,
+                            userInfo.stars
                         )
                     }
                     requireActivity().runOnUiThread {
@@ -498,7 +506,8 @@ class ProfileFragment : Fragment() {
                             userInfo.username,
                             avatarFilename,
                             avatarUrl,
-                            userInfo.balance
+                            userInfo.balance,
+                            userInfo.stars
                         )
                     }
                     requireActivity().runOnUiThread {
@@ -554,7 +563,8 @@ class ProfileFragment : Fragment() {
                         userInfo.username,
                         avatarFilename,
                         avatarUrl,
-                        userInfo.balance
+                        userInfo.balance,
+                        userInfo.stars
                     )
                 }
                 requireActivity().runOnUiThread {

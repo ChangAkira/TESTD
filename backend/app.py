@@ -156,7 +156,8 @@ def ensure_table_exists(conn):
         name VARCHAR(128),
         username VARCHAR(128),
         avatar_filename VARCHAR(255),
-        balance DECIMAL(10,2) DEFAULT 0
+        balance DECIMAL(10,2) DEFAULT 0,
+        stars INT DEFAULT 0
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """
     with conn.cursor() as cursor:
@@ -177,6 +178,14 @@ def ensure_balance_column(conn):
         cursor.execute("SHOW COLUMNS FROM USERINFOS LIKE 'balance'")
         if cursor.fetchone() is None:
             cursor.execute("ALTER TABLE USERINFOS ADD COLUMN balance DECIMAL(10,2) DEFAULT 0")
+    conn.commit()
+
+
+def ensure_stars_column(conn):
+    with conn.cursor() as cursor:
+        cursor.execute("SHOW COLUMNS FROM USERINFOS LIKE 'stars'")
+        if cursor.fetchone() is None:
+            cursor.execute("ALTER TABLE USERINFOS ADD COLUMN stars INT DEFAULT 0")
     conn.commit()
 
 
@@ -201,13 +210,14 @@ def create_user():
         ensure_table_exists(conn)
         ensure_avatar_column(conn)
         ensure_balance_column(conn)
+        ensure_stars_column(conn)
         avatar_filename = pick_default_avatar()
         with conn.cursor() as cursor:
             insert_sql = """
-            INSERT INTO USERINFOS (student_id, name, username, avatar_filename, balance)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO USERINFOS (student_id, name, username, avatar_filename, balance, stars)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(insert_sql, (student_id, name, username, avatar_filename, 0))
+            cursor.execute(insert_sql, (student_id, name, username, avatar_filename, 0, 0))
         conn.commit()
         return jsonify({"status": "created"}), 201
     except mysql.connector.Error as exc:
@@ -231,9 +241,10 @@ def get_user(student_id):
         ensure_table_exists(conn)
         ensure_avatar_column(conn)
         ensure_balance_column(conn)
+        ensure_stars_column(conn)
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
-                "SELECT student_id, name, username, avatar_filename, balance FROM USERINFOS WHERE student_id = %s",
+                "SELECT student_id, name, username, avatar_filename, balance, stars FROM USERINFOS WHERE student_id = %s",
                 (student_id,),
             )
             row = cursor.fetchone()
@@ -273,6 +284,7 @@ def update_username(student_id):
         ensure_table_exists(conn)
         ensure_avatar_column(conn)
         ensure_balance_column(conn)
+        ensure_stars_column(conn)
         with conn.cursor() as cursor:
             cursor.execute(
                 "UPDATE USERINFOS SET username = %s WHERE student_id = %s",
@@ -283,7 +295,7 @@ def update_username(student_id):
         conn.commit()
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
-                "SELECT student_id, name, username, avatar_filename, balance FROM USERINFOS WHERE student_id = %s",
+                "SELECT student_id, name, username, avatar_filename, balance, stars FROM USERINFOS WHERE student_id = %s",
                 (student_id,),
             )
             row = cursor.fetchone()
@@ -535,6 +547,17 @@ def list_tasks():
     acceptor_id = (request.args.get("acceptor_id") or "").strip()
     if not publisher_id and not acceptor_id:
         return jsonify({"error": "publisher_id or acceptor_id is required"}), 400
+    page_raw = request.args.get("page", "1")
+    page_size_raw = request.args.get("page_size", "15")
+    try:
+        page = max(1, int(page_raw))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = min(15, max(1, int(page_size_raw)))
+    except (TypeError, ValueError):
+        page_size = 15
+    offset = (page - 1) * page_size
 
     conn = None
     try:
@@ -542,28 +565,38 @@ def list_tasks():
         ensure_tasks_table(conn)
         ensure_acceptor_column(conn)
         ensure_task_location_columns(conn)
+        ensure_table_exists(conn)
+        ensure_stars_column(conn)
         with conn.cursor(dictionary=True) as cursor:
             if publisher_id:
                 cursor.execute(
                     """
-                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location,
-                           start_lat, start_lng, target_lat, target_lng, reward, status, created_at
+                    SELECT TASKS.id, TASKS.publisher_id, TASKS.acceptor_id, TASKS.title, TASKS.description,
+                           TASKS.start_location, TASKS.target_location, TASKS.start_lat, TASKS.start_lng,
+                           TASKS.target_lat, TASKS.target_lng, TASKS.reward, TASKS.status, TASKS.created_at,
+                           acceptor.stars AS acceptor_stars
                     FROM TASKS
+                    LEFT JOIN USERINFOS AS acceptor ON TASKS.acceptor_id = acceptor.student_id
                     WHERE publisher_id = %s
                     ORDER BY created_at DESC, id DESC
+                    LIMIT %s OFFSET %s
                     """,
-                    (publisher_id,),
+                    (publisher_id, page_size, offset),
                 )
             else:
                 cursor.execute(
                     """
-                    SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location,
-                           start_lat, start_lng, target_lat, target_lng, reward, status, created_at
+                    SELECT TASKS.id, TASKS.publisher_id, TASKS.acceptor_id, TASKS.title, TASKS.description,
+                           TASKS.start_location, TASKS.target_location, TASKS.start_lat, TASKS.start_lng,
+                           TASKS.target_lat, TASKS.target_lng, TASKS.reward, TASKS.status, TASKS.created_at,
+                           acceptor.stars AS acceptor_stars
                     FROM TASKS
+                    LEFT JOIN USERINFOS AS acceptor ON TASKS.acceptor_id = acceptor.student_id
                     WHERE acceptor_id = %s
                     ORDER BY created_at DESC, id DESC
+                    LIMIT %s OFFSET %s
                     """,
-                    (acceptor_id,),
+                    (acceptor_id, page_size, offset),
                 )
             rows = cursor.fetchall()
         return jsonify({"tasks": rows}), 200
@@ -700,6 +733,9 @@ def get_task_detail(task_id):
 def update_task_status(task_id):
     data = request.get_json(silent=True) or {}
     new_status = (data.get("status") or "").strip()
+    operator_id = (data.get("operator_id") or "").strip()
+    acceptor_id = (data.get("acceptor_id") or "").strip()
+    rating = data.get("rating")
     if not new_status:
         return jsonify({"error": "status is required"}), 400
 
@@ -709,6 +745,8 @@ def update_task_status(task_id):
         ensure_tasks_table(conn)
         ensure_acceptor_column(conn)
         ensure_balance_column(conn)
+        ensure_table_exists(conn)
+        ensure_stars_column(conn)
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
                 "SELECT id, publisher_id, acceptor_id, reward, status FROM TASKS WHERE id = %s",
@@ -718,36 +756,87 @@ def update_task_status(task_id):
         if not task:
             return jsonify({"error": "task not found"}), 404
 
-        if task["status"] == "待支付" and new_status == "已完成":
-            with conn.cursor(dictionary=True) as cursor:
-                cursor.execute(
-                    "SELECT balance FROM USERINFOS WHERE student_id = %s",
-                    (task["publisher_id"],),
-                )
-                user = cursor.fetchone()
-            if not user:
-                return jsonify({"error": "user not found"}), 404
-            if float(user["balance"]) < float(task["reward"]):
-                return jsonify({"error": "insufficient balance"}), 400
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE USERINFOS SET balance = balance - %s WHERE student_id = %s",
-                    (task["reward"], task["publisher_id"]),
-                )
+        current_status = task["status"]
+        task_acceptor = task.get("acceptor_id") or ""
+        publisher_id = task.get("publisher_id") or ""
 
-        acceptor_id = (data.get("acceptor_id") or "").strip()
-        if acceptor_id:
+        if new_status == "进行中":
+            if not acceptor_id:
+                return jsonify({"error": "acceptor_id is required"}), 400
+            if current_status != "等待接单":
+                return jsonify({"error": "invalid status transition"}), 400
+            if task_acceptor:
+                return jsonify({"error": "task already accepted"}), 400
+            if operator_id and operator_id != acceptor_id:
+                return jsonify({"error": "operator mismatch"}), 400
             with conn.cursor() as cursor:
                 cursor.execute(
                     "UPDATE TASKS SET status = %s, acceptor_id = %s WHERE id = %s",
                     (new_status, acceptor_id, task_id),
                 )
-        else:
+        elif new_status == "已送达":
+            if not operator_id or operator_id != task_acceptor:
+                return jsonify({"error": "only acceptor can mark delivered"}), 403
+            if current_status != "进行中":
+                return jsonify({"error": "invalid status transition"}), 400
             with conn.cursor() as cursor:
                 cursor.execute(
                     "UPDATE TASKS SET status = %s WHERE id = %s",
                     (new_status, task_id),
                 )
+        elif new_status == "已完成":
+            if not operator_id or operator_id != publisher_id:
+                return jsonify({"error": "only publisher can mark completed"}), 403
+            if current_status != "已送达":
+                return jsonify({"error": "invalid status transition"}), 400
+            try:
+                rating_value = int(rating)
+            except (TypeError, ValueError):
+                return jsonify({"error": "rating is required"}), 400
+            if rating_value < 1 or rating_value > 5:
+                return jsonify({"error": "rating must be 1-5"}), 400
+            if not task_acceptor:
+                return jsonify({"error": "acceptor not found"}), 400
+            with conn.cursor(dictionary=True) as cursor:
+                cursor.execute(
+                    "SELECT balance FROM USERINFOS WHERE student_id = %s",
+                    (publisher_id,),
+                )
+                publisher = cursor.fetchone()
+            if not publisher:
+                return jsonify({"error": "publisher not found"}), 404
+            if float(publisher["balance"]) < float(task["reward"]):
+                return jsonify({"error": "insufficient balance"}), 400
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE TASKS SET status = %s WHERE id = %s",
+                    (new_status, task_id),
+                )
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE USERINFOS SET balance = balance - %s WHERE student_id = %s",
+                    (task["reward"], publisher_id),
+                )
+                cursor.execute(
+                    "UPDATE USERINFOS SET balance = balance + %s WHERE student_id = %s",
+                    (task["reward"], task_acceptor),
+                )
+                cursor.execute(
+                    "UPDATE USERINFOS SET stars = stars + %s WHERE student_id = %s",
+                    (rating_value, task_acceptor),
+                )
+        elif new_status == "已取消":
+            if not operator_id or operator_id != publisher_id:
+                return jsonify({"error": "only publisher can cancel"}), 403
+            if current_status != "等待接单":
+                return jsonify({"error": "invalid status transition"}), 400
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE TASKS SET status = %s WHERE id = %s",
+                    (new_status, task_id),
+                )
+        else:
+            return jsonify({"error": "unsupported status"}), 400
         conn.commit()
         return jsonify({"status": "updated"}), 200
     except mysql.connector.Error as exc:

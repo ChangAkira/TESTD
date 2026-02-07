@@ -3,6 +3,7 @@ package com.example.testd.tasks
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.testd.R
@@ -42,6 +43,27 @@ class TaskAdapter(
         holder.tvReward.text = String.format(Locale.getDefault(), "酬劳：%.2f", item.reward)
         holder.tvDescription.text = item.description
         holder.tvLocations.text = "起点：${item.startLocation}  终点：${item.targetLocation}"
+        val stars = item.acceptorStars
+        if (stars != null) {
+            holder.tvAcceptorStars.visibility = View.VISIBLE
+            holder.tvAcceptorStars.text = "接单者星星：$stars"
+        } else {
+            holder.tvAcceptorStars.visibility = View.GONE
+        }
+        when (item.status) {
+            "已送达" -> {
+                holder.ivTaskFlag.visibility = View.VISIBLE
+                holder.ivTaskFinish.visibility = View.GONE
+            }
+            "已完成" -> {
+                holder.ivTaskFlag.visibility = View.VISIBLE
+                holder.ivTaskFinish.visibility = View.VISIBLE
+            }
+            else -> {
+                holder.ivTaskFlag.visibility = View.GONE
+                holder.ivTaskFinish.visibility = View.GONE
+            }
+        }
         holder.itemView.setOnClickListener {
             onItemClick?.invoke(item)
         }
@@ -51,9 +73,12 @@ class TaskAdapter(
 
     class TaskViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val tvTitle: TextView = view.findViewById(R.id.tvTaskTitle)
+        val ivTaskFlag: ImageView = view.findViewById(R.id.ivTaskFlag)
+        val ivTaskFinish: ImageView = view.findViewById(R.id.ivTaskFinish)
         val tvStatus: TextView = view.findViewById(R.id.tvTaskStatus)
         val tvReward: TextView = view.findViewById(R.id.tvTaskReward)
         val tvDescription: TextView = view.findViewById(R.id.tvTaskDescription)
         val tvLocations: TextView = view.findViewById(R.id.tvTaskLocations)
+        val tvAcceptorStars: TextView = view.findViewById(R.id.tvTaskAcceptorStars)
     }
 }

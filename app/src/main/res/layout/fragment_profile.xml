@@ -92,6 +92,25 @@
         app:layout_constraintTop_toTopOf="@id/labelBalance"
         app:layout_constraintWidth_default="wrap" />
 
+    <TextView
+        android:id="@+id/labelStars"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/stars_label"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/labelBalance" />
+
+    <TextView
+        android:id="@+id/tvStars"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="0"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/labelStars"
+        app:layout_constraintTop_toTopOf="@id/labelStars"
+        app:layout_constraintWidth_default="wrap" />
+
     <EditText
         android:id="@+id/etUsername"
         android:layout_width="0dp"
@@ -101,7 +120,7 @@
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/labelBalance" />
+        app:layout_constraintTop_toBottomOf="@id/labelStars" />
 
     <Button
         android:id="@+id/btnUpdateUsername"
