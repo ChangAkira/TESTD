@@ -574,6 +574,47 @@ def list_tasks():
             conn.close()
 
 
+@app.route("/tasks/open", methods=["GET"])
+def list_open_tasks():
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_tasks_table(conn)
+        ensure_acceptor_column(conn)
+        ensure_task_location_columns(conn)
+        page_raw = request.args.get("page", "1")
+        page_size_raw = request.args.get("page_size", "15")
+        try:
+            page = max(1, int(page_raw))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = min(15, max(1, int(page_size_raw)))
+        except (TypeError, ValueError):
+            page_size = 15
+        offset = (page - 1) * page_size
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location,
+                       start_lat, start_lng, target_lat, target_lng, reward, status, created_at
+                FROM TASKS
+                WHERE (acceptor_id IS NULL OR acceptor_id = '')
+                  AND status = '等待接单'
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s OFFSET %s
+                """,
+                (page_size, offset),
+            )
+            rows = cursor.fetchall()
+        return jsonify({"tasks": rows}), 200
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 @app.route("/tasks/<int:task_id>", methods=["GET"])
 def get_task_detail(task_id):
     conn = None

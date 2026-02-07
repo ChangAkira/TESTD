@@ -47,6 +47,7 @@ dependencies {
     implementation(libs.glide)
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.viewpager2)
+    implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.amap)
     implementation(libs.ucrop)
     testImplementation(libs.junit)

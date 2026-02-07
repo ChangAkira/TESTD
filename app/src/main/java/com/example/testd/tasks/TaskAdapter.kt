@@ -20,6 +20,15 @@ class TaskAdapter(
         notifyDataSetChanged()
     }
 
+    fun appendData(moreItems: List<TaskItem>) {
+        if (moreItems.isEmpty()) return
+        val start = items.size
+        items.addAll(moreItems)
+        notifyItemRangeInserted(start, moreItems.size)
+    }
+
+    fun getItems(): List<TaskItem> = items.toList()
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TaskViewHolder {
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_task, parent, false)
