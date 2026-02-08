@@ -12,6 +12,7 @@ app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 AVATAR_DIR = BASE_DIR / "static" / "avatars"
+EVIDENCE_DIR = BASE_DIR / "static" / "evidence"
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -46,6 +47,10 @@ def build_avatar_url(filename):
         return None
     return f"/static/avatars/{quote(filename)}"
 
+def build_evidence_url(filename):
+    if not filename:
+        return None
+    return f"/static/evidence/{quote(filename)}"
 
 def is_allowed_image(filename, content_type):
     if not filename:
@@ -118,6 +123,7 @@ def ensure_tasks_table(conn):
         target_lng DOUBLE,
         reward DECIMAL(10,2),
         status VARCHAR(32),
+        evidence VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """
@@ -146,6 +152,14 @@ def ensure_task_location_columns(conn):
             cursor.execute("SHOW COLUMNS FROM TASKS LIKE %s", (column,))
             if cursor.fetchone() is None:
                 cursor.execute(f"ALTER TABLE TASKS ADD COLUMN {column} {col_type}")
+    conn.commit()
+
+
+def ensure_evidence_column(conn):
+    with conn.cursor() as cursor:
+        cursor.execute("SHOW COLUMNS FROM TASKS LIKE 'evidence'")
+        if cursor.fetchone() is None:
+            cursor.execute("ALTER TABLE TASKS ADD COLUMN evidence VARCHAR(255)")
     conn.commit()
 
 
@@ -656,14 +670,16 @@ def get_task_detail(task_id):
         ensure_tasks_table(conn)
         ensure_acceptor_column(conn)
         ensure_task_location_columns(conn)
+        ensure_evidence_column(conn)
         ensure_table_exists(conn)
         ensure_avatar_column(conn)
+        ensure_stars_column(conn)
 
         with conn.cursor(dictionary=True) as cursor:
             cursor.execute(
                 """
                 SELECT id, publisher_id, acceptor_id, title, description, start_location, target_location,
-                       start_lat, start_lng, target_lat, target_lng, reward, status, created_at
+                       start_lat, start_lng, target_lat, target_lng, reward, status, evidence, created_at
                 FROM TASKS
                 WHERE id = %s
                 """,
@@ -715,6 +731,7 @@ def get_task_detail(task_id):
             "target_lng": task.get("target_lng"),
             "reward": task.get("reward"),
             "status": task.get("status"),
+            "evidence_url": build_evidence_url(task.get("evidence")),
             "created_at": created_at,
             "publisher_username": publisher.get("username") if publisher else None,
             "publisher_avatar_url": publisher.get("avatar_url") if publisher else None,
@@ -722,6 +739,67 @@ def get_task_detail(task_id):
             "acceptor_avatar_url": acceptor.get("avatar_url") if acceptor else None,
         }
         return jsonify(payload), 200
+    except mysql.connector.Error as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/tasks/<int:task_id>/evidence", methods=["POST"])
+def upload_task_evidence(task_id):
+    operator_id = (request.form.get("operator_id") or "").strip()
+    if "evidence" not in request.files:
+        return jsonify({"error": "evidence file is required"}), 400
+
+    evidence_file = request.files["evidence"]
+    if not is_allowed_image(evidence_file.filename, evidence_file.content_type):
+        return jsonify({"error": "only png/jpg/gif/webp/bmp/heic/heif are allowed"}), 400
+
+    conn = None
+    try:
+        conn = get_connection()
+        ensure_tasks_table(conn)
+        ensure_acceptor_column(conn)
+        ensure_task_location_columns(conn)
+        ensure_evidence_column(conn)
+
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT id, acceptor_id, status, evidence FROM TASKS WHERE id = %s",
+                (task_id,),
+            )
+            task = cursor.fetchone()
+        if not task:
+            return jsonify({"error": "task not found"}), 404
+        if task.get("status") == "已完成":
+            return jsonify({"error": "task completed"}), 400
+        if task.get("status") not in ("进行中", "已送达"):
+            return jsonify({"error": "invalid status"}), 400
+        if not operator_id or operator_id != (task.get("acceptor_id") or ""):
+            return jsonify({"error": "only acceptor can upload evidence"}), 403
+
+        EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+        ext = os.path.splitext(evidence_file.filename)[1].lower()
+        if ext == ".jpeg":
+            ext = ".jpg"
+        filename = f"{task_id}{ext}"
+        save_path = EVIDENCE_DIR / filename
+        evidence_file.save(save_path)
+
+        old_filename = task.get("evidence")
+        if old_filename and old_filename != filename:
+            old_path = EVIDENCE_DIR / old_filename
+            if old_path.exists():
+                old_path.unlink()
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE TASKS SET evidence = %s WHERE id = %s",
+                (filename, task_id),
+            )
+        conn.commit()
+        return jsonify({"evidence_url": build_evidence_url(filename)}), 200
     except mysql.connector.Error as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

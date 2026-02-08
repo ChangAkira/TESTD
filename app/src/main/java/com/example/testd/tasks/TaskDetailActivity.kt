@@ -1,5 +1,6 @@
 package com.example.testd.tasks
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -7,7 +8,9 @@ import android.widget.ImageView
 import android.widget.RatingBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import com.example.testd.AppConfig
 import com.example.testd.R
@@ -17,10 +20,14 @@ import com.google.android.material.button.MaterialButton
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.util.Locale
 
@@ -40,12 +47,40 @@ class TaskDetailActivity : AppCompatActivity() {
     private lateinit var btnSecondaryAction: MaterialButton
     private lateinit var ivDetailFlag: ImageView
     private lateinit var ivDetailFinish: ImageView
+    private lateinit var tvEvidenceLabel: TextView
+    private lateinit var layoutEvidenceContainer: View
+    private lateinit var ivEvidenceImage: ImageView
 
     private var currentStatus: String = ""
     private var publisherId: String = ""
     private var acceptorId: String = ""
     private var taskId: Int = -1
     private var source: String = SOURCE_HALL
+    private var evidenceUrl: String = ""
+    private var pendingEvidenceUri: Uri? = null
+    private var pendingEvidenceFile: File? = null
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            launchCameraForEvidence()
+        } else {
+            Toast.makeText(this, getString(R.string.task_evidence_camera_denied), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private val takePictureLauncher = registerForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            pendingEvidenceFile?.let { file ->
+                uploadEvidence(file)
+            }
+        } else {
+            Toast.makeText(this, getString(R.string.task_evidence_capture_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +101,9 @@ class TaskDetailActivity : AppCompatActivity() {
         btnSecondaryAction = findViewById(R.id.btnSecondaryAction)
         ivDetailFlag = findViewById(R.id.ivDetailFlag)
         ivDetailFinish = findViewById(R.id.ivDetailFinish)
+        tvEvidenceLabel = findViewById(R.id.tvEvidenceLabel)
+        layoutEvidenceContainer = findViewById(R.id.layoutEvidenceContainer)
+        ivEvidenceImage = findViewById(R.id.ivEvidenceImage)
 
         taskId = intent.getIntExtra(EXTRA_TASK_ID, -1)
         source = intent.getStringExtra(EXTRA_SOURCE) ?: SOURCE_HALL
@@ -125,6 +163,7 @@ class TaskDetailActivity : AppCompatActivity() {
         val publisherAvatarPath = json.optString("publisher_avatar_url")
         val acceptorName = json.optString("acceptor_username")
         val acceptorAvatarPath = json.optString("acceptor_avatar_url")
+        evidenceUrl = if (json.isNull("evidence_url")) "" else json.optString("evidence_url")
 
         currentStatus = status
         tvTitle.text = title
@@ -157,6 +196,32 @@ class TaskDetailActivity : AppCompatActivity() {
                 .into(ivAcceptorAvatar)
         } else {
             acceptorSection.visibility = View.GONE
+        }
+
+        tvEvidenceLabel.visibility = View.VISIBLE
+        tvEvidenceLabel.text = getString(R.string.task_evidence_title)
+        if (evidenceUrl.isNotBlank() && evidenceUrl != "null") {
+            layoutEvidenceContainer.visibility = View.VISIBLE
+            val fullUrl = if (evidenceUrl.startsWith("http")) {
+                evidenceUrl
+            } else {
+                "${AppConfig.BASE_URL}$evidenceUrl"
+            }
+            val refreshUrl = if (fullUrl.contains("?")) {
+                "$fullUrl&t=${System.currentTimeMillis()}"
+            } else {
+                "$fullUrl?t=${System.currentTimeMillis()}"
+            }
+            Glide.with(this)
+                .load(refreshUrl)
+                .into(ivEvidenceImage)
+            ivEvidenceImage.setOnClickListener {
+                val intent = android.content.Intent(this, ImagePreviewActivity::class.java)
+                intent.putExtra(ImagePreviewActivity.EXTRA_IMAGE_URL, refreshUrl)
+                startActivity(intent)
+            }
+        } else {
+            layoutEvidenceContainer.visibility = View.GONE
         }
 
         when (status) {
@@ -210,10 +275,23 @@ class TaskDetailActivity : AppCompatActivity() {
                 }
             }
             SOURCE_ACCEPTED -> {
-                btnPrimaryAction.text = getString(R.string.action_mark_delivered)
-                btnPrimaryAction.isEnabled = currentStatus == "进行中"
+                btnPrimaryAction.text = if (currentStatus == "已送达") {
+                    getString(R.string.action_reupload_evidence)
+                } else {
+                    getString(R.string.action_mark_delivered)
+                }
+                btnPrimaryAction.isEnabled = currentStatus == "进行中" || currentStatus == "已送达"
                 btnPrimaryAction.setOnClickListener {
-                    updateTaskStatus(newStatus = "已送达", acceptorId = null, rating = null)
+                    if (currentStatus == "已完成") return@setOnClickListener
+                    if (androidx.core.content.ContextCompat.checkSelfPermission(
+                            this,
+                            android.Manifest.permission.CAMERA
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        launchCameraForEvidence()
+                    } else {
+                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                    }
                 }
             }
         }
@@ -284,6 +362,90 @@ class TaskDetailActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun launchCameraForEvidence() {
+        val imageFile = File(cacheDir, "evidence_${taskId}.jpg")
+        val uri = FileProvider.getUriForFile(
+            this,
+            "${packageName}.fileprovider",
+            imageFile
+        )
+        pendingEvidenceFile = imageFile
+        pendingEvidenceUri = uri
+        takePictureLauncher.launch(uri)
+    }
+
+    private fun uploadEvidence(file: File) {
+        val user = UserSession.get(this) ?: return
+        val compressed = compressImage(file) ?: run {
+            Toast.makeText(this, getString(R.string.task_evidence_upload_failed), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val fileBody = compressed.toRequestBody("image/jpeg".toMediaType())
+        val multipart = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("operator_id", user.studentId)
+            .addFormDataPart("evidence", "${taskId}.jpg", fileBody)
+            .build()
+
+        val request = Request.Builder()
+            .url("${AppConfig.BASE_URL}/tasks/$taskId/evidence")
+            .post(multipart)
+            .build()
+
+        AppConfig.httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Toast.makeText(this@TaskDetailActivity, getString(R.string.task_evidence_upload_failed), Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val code = response.code
+                response.close()
+                if (code == 200) {
+                    if (currentStatus == "进行中") {
+                        updateTaskStatus(newStatus = "已送达", acceptorId = null, rating = null)
+                    } else {
+                        fetchTaskDetail(taskId)
+                    }
+                } else {
+                    runOnUiThread {
+                        Toast.makeText(this@TaskDetailActivity, getString(R.string.task_evidence_upload_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        })
+    }
+
+    private fun compressImage(file: File): ByteArray? {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+        val maxSize = 1080
+        val width = bitmap.width
+        val height = bitmap.height
+        val scale = if (width > height) {
+            maxSize.toFloat() / width.toFloat()
+        } else {
+            maxSize.toFloat() / height.toFloat()
+        }.coerceAtMost(1.0f)
+        val resized = if (scale < 1.0f) {
+            android.graphics.Bitmap.createScaledBitmap(
+                bitmap,
+                (width * scale).toInt(),
+                (height * scale).toInt(),
+                true
+            )
+        } else {
+            bitmap
+        }
+        val out = ByteArrayOutputStream()
+        resized.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+        if (resized != bitmap) {
+            resized.recycle()
+        }
+        bitmap.recycle()
+        return out.toByteArray()
     }
 
     companion object {
